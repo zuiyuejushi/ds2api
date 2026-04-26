@@ -130,30 +130,15 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 func buildCombinedTranscript(historyText, currentContent string) string {
 	var sb strings.Builder
 
-	// Use DeepSeek's file reference format
-	// [file content end]
-	// <content>
-	// [file name]: FILENAME
-	// [file content begin]
-
 	// History section (if exists) - placed first (lower priority)
 	if historyText != "" {
-		sb.WriteString("[file content end]\n\n")
-		sb.WriteString("【历史上下文】\n")
 		sb.WriteString(historyText)
 		sb.WriteString("\n\n")
-		sb.WriteString("[file name]: HISTORY\n")
-		sb.WriteString("[file content begin]\n")
 	}
 
 	// Current input section - placed last (highest priority, closest to user)
 	if currentContent != "" {
-		sb.WriteString("[file content end]\n\n")
-		sb.WriteString("【当前任务 - 请优先关注】\n")
 		sb.WriteString(currentContent)
-		sb.WriteString("\n\n")
-		sb.WriteString("[file name]: CURRENT\n")
-		sb.WriteString("[file content begin]\n")
 	}
 
 	return sb.String()
