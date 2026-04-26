@@ -8,6 +8,7 @@ import (
 
 	"ds2api/internal/auth"
 	dsclient "ds2api/internal/deepseek/client"
+	"ds2api/internal/config"
 	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
 )
@@ -66,6 +67,9 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		return stdReq, errors.New("upload current input file returned empty file id")
 	}
 
+	// Log for debugging
+	config.Logger.Debug("[current_input_split] uploaded file", "file_id", fileID, "filename", currentInputFilename, "bytes", len(inputText))
+
 	// Replace the last user message with a reference to the uploaded file
 	// Use a strong citation format to ensure the model references the file
 	replacementMsg := map[string]any{
@@ -82,6 +86,9 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 	stdReq.Messages = newMessages
 	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
 	stdReq.FinalPrompt, stdReq.ToolNames = promptcompat.BuildOpenAIPrompt(newMessages, stdReq.ToolsRaw, "", stdReq.ToolChoice, stdReq.Thinking)
+
+	// Log final state for debugging
+	config.Logger.Debug("[current_input_split] updated request", "ref_file_ids", stdReq.RefFileIDs, "final_prompt_length", len(stdReq.FinalPrompt))
 
 	return stdReq, nil
 }
