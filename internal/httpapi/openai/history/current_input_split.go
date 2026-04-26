@@ -96,10 +96,13 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		return stdReq, nil
 	}
 
-	// Replace the last user message with a reference to the uploaded file
+	// Build replacement message with clear priority indication
+	// If there's history, we need to guide the model to prioritize current input
+	replacementContent := buildCurrentInputPrompt(stdReq.RefFileIDs, fileID)
+
 	replacementMsg := map[string]any{
 		"role":    "user",
-		"content": fmt.Sprintf("[文件引用: %s]\n请查看上传的文件内容并回答相关问题。", currentInputFilename),
+		"content": replacementContent,
 	}
 
 	// Create new messages slice with the replacement
@@ -201,6 +204,39 @@ func buildCurrentInputTranscript(content string) string {
 	sb.WriteString(content)
 	sb.WriteString("\n\n" + strings.Repeat("=", 51) + "\n")
 	sb.WriteString("[输入结束 - End of Input]")
+	return sb.String()
+}
+
+// buildCurrentInputPrompt builds the prompt that references the current input file
+// It ensures the model prioritizes the current input over history
+func buildCurrentInputPrompt(existingRefFileIDs []string, currentFileID string) string {
+	var sb strings.Builder
+
+	// Check if there's history (HISTORY.txt would be in ref_file_ids)
+	hasHistory := false
+	for _, id := range existingRefFileIDs {
+		if strings.TrimSpace(id) != "" && strings.TrimSpace(id) != currentFileID {
+			hasHistory = true
+			break
+		}
+	}
+
+	// Strong priority indication for current input
+	sb.WriteString("【重要 - 当前任务】\n")
+	sb.WriteString("请优先阅读并理解以下文件中的内容，这是你的当前任务：\n")
+	sb.WriteString(fmt.Sprintf("[文件引用: %s]\n", currentInputFilename))
+	sb.WriteString("\n")
+
+	if hasHistory {
+		sb.WriteString("【参考 - 历史上下文】\n")
+		sb.WriteString("以下文件包含历史对话上下文，仅供参考，请优先以上述【当前任务】为准：\n")
+		sb.WriteString("[文件引用: HISTORY.txt]\n")
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("【指令】\n")
+	sb.WriteString("请基于【当前任务】文件中的内容回答用户问题。如果当前任务与历史上下文有冲突，请以当前任务为准。")
+
 	return sb.String()
 }
 
