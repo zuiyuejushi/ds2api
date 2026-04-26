@@ -42,6 +42,13 @@ func (h *Handler) applyHistorySplit(ctx context.Context, a *auth.RequestAuth, st
 	return history.Service{Store: h.Store, DS: h.DS}.Apply(ctx, a, stdReq)
 }
 
+func (h *Handler) applyCurrentInputSplit(ctx context.Context, a *auth.RequestAuth, stdReq promptcompat.StandardRequest) (promptcompat.StandardRequest, error) {
+	if h == nil {
+		return stdReq, nil
+	}
+	return history.CurrentInputSplitService{Store: h.Store, DS: h.DS}.Apply(ctx, a, stdReq)
+}
+
 func (h *Handler) preprocessInlineFileInputs(ctx context.Context, a *auth.RequestAuth, req map[string]any) error {
 	if h == nil {
 		return nil
@@ -80,6 +87,10 @@ func writeOpenAIInlineFileError(w http.ResponseWriter, err error) {
 }
 
 func mapHistorySplitError(err error) (int, string) {
+	return history.MapError(err)
+}
+
+func mapCurrentInputSplitError(err error) (int, string) {
 	return history.MapError(err)
 }
 

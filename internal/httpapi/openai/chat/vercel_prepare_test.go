@@ -118,8 +118,9 @@ func TestHandleVercelStreamPrepareAppliesHistorySplit(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected 1 history upload, got %d", len(ds.uploadCalls))
+	// Expect 2 uploads: HISTORY.txt + INPUT.txt
+	if len(ds.uploadCalls) != 2 {
+		t.Fatalf("expected 2 uploads (history + current input), got %d", len(ds.uploadCalls))
 	}
 
 	var body map[string]any
@@ -131,15 +132,17 @@ func TestHandleVercelStreamPrepareAppliesHistorySplit(t *testing.T) {
 		t.Fatalf("expected payload object, got %#v", body["payload"])
 	}
 	promptText, _ := payload["prompt"].(string)
-	if !strings.Contains(promptText, "latest user turn") {
-		t.Fatalf("expected latest user turn in prompt, got %s", promptText)
+	// After current input split, prompt should contain file reference
+	if !strings.Contains(promptText, "[文件引用: INPUT.txt]") {
+		t.Fatalf("expected file reference in prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
 		t.Fatalf("expected historical turns removed from prompt, got %s", promptText)
 	}
 	refIDs, _ := payload["ref_file_ids"].([]any)
-	if len(refIDs) == 0 || refIDs[0] != "file-inline-1" {
-		t.Fatalf("expected uploaded history file first in ref_file_ids, got %#v", payload["ref_file_ids"])
+	// Expect 2 ref files: HISTORY.txt + INPUT.txt
+	if len(refIDs) < 2 {
+		t.Fatalf("expected 2 ref_file_ids (history + input), got %#v", payload["ref_file_ids"])
 	}
 }
 

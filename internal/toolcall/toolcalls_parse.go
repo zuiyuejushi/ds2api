@@ -45,16 +45,27 @@ func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 		return result
 	}
 
+	// Try standard XML parsing first
 	parsed := parseXMLToolCalls(trimmed)
-	if len(parsed) == 0 {
+	if len(parsed) > 0 {
+		result.SawToolCallSyntax = true
+		calls, rejectedNames := filterToolCallsDetailed(parsed)
+		result.Calls = calls
+		result.RejectedToolNames = rejectedNames
+		result.RejectedByPolicy = len(rejectedNames) > 0 && len(calls) == 0
 		return result
 	}
 
-	result.SawToolCallSyntax = true
-	calls, rejectedNames := filterToolCallsDetailed(parsed)
-	result.Calls = calls
-	result.RejectedToolNames = rejectedNames
-	result.RejectedByPolicy = len(rejectedNames) > 0 && len(calls) == 0
+	// Try repair and parse as fallback
+	if repairedCalls, ok := TryRepairAndParse(trimmed, nil); ok && len(repairedCalls) > 0 {
+		result.SawToolCallSyntax = true
+		calls, rejectedNames := filterToolCallsDetailed(repairedCalls)
+		result.Calls = calls
+		result.RejectedToolNames = rejectedNames
+		result.RejectedByPolicy = len(rejectedNames) > 0 && len(calls) == 0
+		return result
+	}
+
 	return result
 }
 
@@ -74,7 +85,9 @@ func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []strin
 
 func looksLikeToolCallSyntax(text string) bool {
 	lower := strings.ToLower(text)
-	return strings.Contains(lower, "<tool_calls")
+	return strings.Contains(lower, "<tool_calls") ||
+		strings.Contains(lower, "<invoke") ||
+		strings.Contains(lower, "<tools>")
 }
 
 func stripFencedCodeBlocks(text string) string {

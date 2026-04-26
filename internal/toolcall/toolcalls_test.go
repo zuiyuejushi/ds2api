@@ -166,11 +166,15 @@ func TestParseToolCallsSupportsInlineJSONToolObject(t *testing.T) {
 	}
 }
 
-func TestParseToolCallsDoesNotAcceptMismatchedMarkupTags(t *testing.T) {
+func TestParseToolCallsRepairsMismatchedMarkupTags(t *testing.T) {
 	text := `<tool_calls><invoke name="read_file"><parameter name="path">README.md</function></invoke></tool_calls>`
 	calls := ParseToolCalls(text, []string{"read_file"})
-	if len(calls) != 0 {
-		t.Fatalf("expected mismatched tags to be rejected, got %#v", calls)
+	// XML repair should fix mismatched tags and parse successfully
+	if len(calls) != 1 {
+		t.Fatalf("expected mismatched tags to be repaired and parsed, got %#v", calls)
+	}
+	if calls[0].Name != "read_file" {
+		t.Fatalf("expected tool name read_file, got %q", calls[0].Name)
 	}
 }
 
@@ -182,22 +186,28 @@ func TestParseToolCallsDoesNotTreatNameInsideParamsAsToolName(t *testing.T) {
 	}
 }
 
-func TestParseToolCallsRejectsLegacyToolsWrapper(t *testing.T) {
+func TestParseToolCallsSupportsLegacyToolsWrapper(t *testing.T) {
 	text := `<tools><tool_call><tool_name>read_file</tool_name><param>{"path":"README.md"}</param></tool_call></tools>`
 	calls := ParseToolCalls(text, []string{"read_file"})
-	if len(calls) != 0 {
-		t.Fatalf("expected legacy tools wrapper to be rejected, got %#v", calls)
+	if len(calls) != 1 {
+		t.Fatalf("expected legacy tools wrapper to be parsed, got %#v", calls)
+	}
+	if calls[0].Name != "read_file" {
+		t.Fatalf("expected tool name read_file, got %q", calls[0].Name)
 	}
 }
 
-func TestParseToolCallsRejectsBareInvokeWithoutToolCallsWrapper(t *testing.T) {
+func TestParseToolCallsSupportsBareInvokeWithoutToolCallsWrapper(t *testing.T) {
 	text := `<invoke name="read_file"><parameter name="path">README.md</parameter></invoke>`
 	res := ParseToolCallsDetailed(text, []string{"read_file"})
-	if len(res.Calls) != 0 {
-		t.Fatalf("expected bare invoke to be rejected, got %#v", res.Calls)
+	if len(res.Calls) != 1 {
+		t.Fatalf("expected bare invoke to be parsed, got %#v", res.Calls)
 	}
-	if res.SawToolCallSyntax {
-		t.Fatalf("expected bare invoke to no longer count as supported syntax, got %#v", res)
+	if res.Calls[0].Name != "read_file" {
+		t.Fatalf("expected tool name read_file, got %q", res.Calls[0].Name)
+	}
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected bare invoke to count as supported syntax, got %#v", res)
 	}
 }
 
@@ -221,11 +231,15 @@ after`
 	}
 }
 
-func TestParseToolCallsRejectsLegacyCanonicalBody(t *testing.T) {
+func TestParseToolCallsSupportsLegacyCanonicalBody(t *testing.T) {
 	text := `<tool_calls><invoke name="read_file"><tool_name>read_file</tool_name><param>{"path":"README.md"}</param></invoke></tool_calls>`
 	calls := ParseToolCalls(text, []string{"read_file"})
-	if len(calls) != 0 {
-		t.Fatalf("expected legacy canonical body to be rejected, got %#v", calls)
+	// Legacy canonical body should be parsed successfully
+	if len(calls) != 1 {
+		t.Fatalf("expected legacy canonical body to be parsed, got %#v", calls)
+	}
+	if calls[0].Name != "read_file" {
+		t.Fatalf("expected tool name read_file, got %q", calls[0].Name)
 	}
 }
 

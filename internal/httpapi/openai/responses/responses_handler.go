@@ -91,6 +91,12 @@ func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, status, message)
 		return
 	}
+	stdReq, err = h.applyCurrentInputSplit(r.Context(), a, stdReq)
+	if err != nil {
+		status, message := mapCurrentInputSplitError(err)
+		writeOpenAIError(w, status, message)
+		return
+	}
 
 	sessionID, err := h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {

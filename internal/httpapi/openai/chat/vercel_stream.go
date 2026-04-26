@@ -75,6 +75,12 @@ func (h *Handler) handleVercelStreamPrepare(w http.ResponseWriter, r *http.Reque
 		writeOpenAIError(w, status, message)
 		return
 	}
+	stdReq, err = h.applyCurrentInputSplit(r.Context(), a, stdReq)
+	if err != nil {
+		status, message := mapCurrentInputSplitError(err)
+		writeOpenAIError(w, status, message)
+		return
+	}
 
 	sessionID, err := h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {

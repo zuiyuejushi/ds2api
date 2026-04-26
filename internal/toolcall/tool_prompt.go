@@ -1,6 +1,10 @@
 package toolcall
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 // BuildToolCallInstructions generates the unified tool-calling instruction block
 // used by all adapters (OpenAI, Claude, Gemini). It uses attention-optimized
@@ -9,7 +13,15 @@ import "strings"
 // The toolNames slice should contain the actual tool names available in the
 // current request; the function picks real names for examples.
 func BuildToolCallInstructions(toolNames []string) string {
-	return `TOOL CALL FORMAT — FOLLOW EXACTLY:
+	// Generate timestamp with millisecond precision for uniqueness
+	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	
+	return `TOOL CALL FORMAT — FOLLOW EXACTLY OR YOUR RESPONSE WILL BE REJECTED:
+
+Timestamp: ` + timestamp + `
+
+IF YOU INTEND TO USE A TOOL, YOUR ENTIRE TURN MUST BE EXACTLY THE BLOCK BELOW AND NOTHING ELSE.
+NO MARKDOWN. NO EXPLANATIONS. NO ROLE PREFIXES. NO SPACES BEFORE <tool_calls>.
 
 <tool_calls>
   <invoke name="TOOL_NAME_HERE">
@@ -18,41 +30,76 @@ func BuildToolCallInstructions(toolNames []string) string {
 </tool_calls>
 
 RULES:
-1) Use the <tool_calls> XML wrapper format only.
+1) Only the <tool_calls> XML format is accepted. Absolutely no JSON, no YAML, no function_call objects, no code fences.
 2) Put one or more <invoke> entries under a single <tool_calls> root.
-3) Put the tool name in the invoke name attribute: <invoke name="TOOL_NAME">.
-4) All string values must use <![CDATA[...]]>, even short ones. This includes code, scripts, file contents, prompts, paths, names, and queries.
+3) Tool name in invoke name attribute: <invoke name="TOOL_NAME">.
+4) 🔴 ALL string values MUST use <![CDATA[...]]> — no exceptions. Code, scripts, file contents, prompts, paths, names, queries — everything.
+   4a) CDATA must start EXACTLY with "<![CDATA[" and end EXACTLY with "]]>".
+   4b) Never output partial CDATA like "[CDATA[" or "]]" alone.
+   4c) Never put any character before "<![CDATA[" or after "]]>" inside the parameter body.
 5) Every top-level argument must be a <parameter name="ARG_NAME">...</parameter> node.
 6) Objects use nested XML elements inside the parameter body. Arrays may repeat <item> children.
 7) Numbers, booleans, and null stay plain text.
 8) Use only the parameter names in the tool schema. Do not invent fields.
-9) Do NOT wrap XML in markdown fences. Do NOT output explanations, role markers, or internal monologue.
-10) If you call a tool, the first non-whitespace characters of that tool block must be exactly <tool_calls>.
+9) Never wrap the XML in markdown fences. Never output explanations, role markers, or internal monologue.
+10) The first non-whitespace of your response must be exactly '<tool_calls>'.
 11) Never omit the opening <tool_calls> tag, even if you already plan to close with </tool_calls>.
+
+🔴 12) JSON FORMAT IS STRICTLY FORBIDDEN. Do NOT output {"tool":"...", "parameters":{...}}, do NOT nest function calls in JSON, and do NOT mix JSON and XML. Only <tool_calls> XML is valid.
 
 PARAMETER SHAPES:
 - string => <parameter name="x"><![CDATA[value]]></parameter>
 - object => <parameter name="x"><field>...</field></parameter>
-- array => <parameter name="x"><item>...</item><item>...</item></parameter>
+- array  => <parameter name="x"><item>...</item><item>...</item></parameter>
 - number/bool/null => <parameter name="x">plain_text</parameter>
 
 【WRONG — Do NOT do these】:
 
 Wrong 1 — mixed text after XML:
   <tool_calls>...</tool_calls> I hope this helps.
+
 Wrong 2 — Markdown code fences:
   ` + "```xml" + `
   <tool_calls>...</tool_calls>
   ` + "```" + `
+
 Wrong 3 — missing opening wrapper:
   <invoke name="TOOL_NAME">...</invoke>
   </tool_calls>
 
-Remember: The ONLY valid way to use tools is the <tool_calls>...</tool_calls> XML block at the end of your response.
+🔴 Wrong 4 — CDATA missing "<![CDATA[" opening:
+  <parameter name="name">value]]></parameter>
 
-` + buildCorrectToolExamples(toolNames)
+🔴 Wrong 5 — CDATA missing "]]>" closing:
+  <parameter name="name"><![CDATA[value</parameter>
+
+🔴 Wrong 6 — CDATA with malformed bracket ("[CDATA[" instead of "<![CDATA["):
+  <parameter name="name">[CDATA[value]]></parameter>
+
+🔴 Wrong 7 — CDATA interrupted by extra quotes or spaces:
+  <parameter name="limit"><![CDATA[30" > 345</parameter>
+
+🔴 Wrong 8 — using JSON instead of XML (WILL BE REJECTED):
+  {"tool": "read_file", "parameters": {"path": "src/main.go"}}
+
+🔴 Wrong 9 — JSON with function_call wrapper:
+  {"function_call": {"name": "read_file", "arguments": "{\"path\":\"src/main.go\"}"}}
+
+Remember: The ONLY valid way to use tools is the <tool_calls>...</tool_calls> XML block, exactly as shown below, with zero extra characters. JSON is dead to you.
+
+` + buildCorrectToolExamples(toolNames) + `
+
+🔴 BEFORE FINALIZING YOUR TOOL CALL OUTPUT, SILENTLY ASK YOURSELF:
+- Does my response contain any JSON, curly braces, or "function_call" keywords? If yes, DELETE IT ALL and rewrite from scratch as <tool_calls> XML.
+- Does EVERY <parameter> that is a string have the FULL <![CDATA[...]]> wrapper with both opening and closing parts?
+- Are there any broken pieces like "[CDATA[" without "<![", or "]]" without ">"?
+- Did I accidentally put a quote, space, or extra text inside or right after a CDATA section?
+- Does my response start with exactly "<tool_calls>" and end with exactly "</tool_calls>" and NOTHING after?
+- If any answer is NO, DELETE your response and rewrite the entire <tool_calls> block correctly from scratch.
+
+Now output THE CORRECT TOOL CALL BLOCK AND NOTHING ELSE.
+`
 }
-
 type promptToolExample struct {
 	name   string
 	params string

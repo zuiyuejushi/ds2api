@@ -268,10 +268,28 @@ history split 现在全局强制开启；旧配置中的 `history_split.enabled=
 [file content begin]
 ```
 
-所以“完整上下文”在当前实现里，其实通常分散在两处：
+所以"完整上下文"在当前实现里，其实通常分散在两处：
 
 - `prompt` 里的 live context
 - `ref_file_ids` 指向的 history transcript file
+
+## 9.1 当前输入文件化 (Current Input Split)
+
+除了 history split，当前实现还会无条件将最后一条 user 消息转为文件上传：
+
+1. 最后一条 user 消息会被序列化成 `INPUT.txt` 文件。
+2. 文件内容使用显式标题包装，确保模型识别这是当前用户输入。
+3. 该文件上传后，其 `file_id` 会排在 `ref_file_ids` 中 history 文件之后。
+4. 原 user 消息会被替换为引用提示：`[文件引用: INPUT.txt]\n请查看上传的文件内容并回答相关问题。`
+
+相关实现：
+- 当前输入拆分：
+  [internal/httpapi/openai/history/current_input_split.go](../internal/httpapi/openai/history/current_input_split.go)
+
+这样设计的好处：
+- 避免当前输入过长导致超出模型上下文限制
+- 通过文件引用方式让模型明确知道需要查看文件内容
+- 历史记录中仍保留原始用户输入（在转换前捕获）
 
 ## 10. 各协议入口的差异
 
@@ -349,6 +367,7 @@ history split 现在全局强制开启；旧配置中的 `history_split.enabled=
 - tool prompt 模板或 tool_choice 约束变更
 - inline 文件上传 / 文件引用收集规则变更
 - history split 触发条件、上传格式、`IGNORE` 包装格式变更
+- current input split 行为变更（是否启用、文件名、引用格式）
 - completion payload 字段语义变更
 - Claude / Gemini 对这套统一语义的复用关系变更
 
@@ -361,6 +380,7 @@ history split 现在全局强制开启；旧配置中的 `history_split.enabled=
 - `internal/httpapi/openai/files/file_inline_upload.go`
 - `internal/promptcompat/file_refs.go`
 - `internal/httpapi/openai/history/history_split.go`
+- `internal/httpapi/openai/history/current_input_split.go`
 - `internal/promptcompat/responses_input_normalize.go`
 - `internal/httpapi/claude/standard_request.go`
 - `internal/httpapi/claude/handler_utils.go`

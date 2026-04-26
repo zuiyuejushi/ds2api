@@ -70,7 +70,14 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, status, message)
 		return
 	}
+	// Start history before current input split to preserve original user input
 	historySession := startChatHistory(h.ChatHistory, r, a, stdReq)
+	stdReq, err = h.applyCurrentInputSplit(r.Context(), a, stdReq)
+	if err != nil {
+		status, message := mapCurrentInputSplitError(err)
+		writeOpenAIError(w, status, message)
+		return
+	}
 
 	sessionID, err = h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {

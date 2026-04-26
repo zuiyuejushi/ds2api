@@ -13,6 +13,7 @@ import (
 
 	"ds2api/internal/auth"
 	"ds2api/internal/chathistory"
+	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/promptcompat"
 )
 
@@ -317,10 +318,22 @@ func TestChatCompletionsHistorySplitPersistsHistoryText(t *testing.T) {
 	if strings.Contains(full.HistoryText, "latest user turn") {
 		t.Fatalf("expected latest turn to stay out of persisted history text, got %q", full.HistoryText)
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected history upload to happen, got %d", len(ds.uploadCalls))
+	// Expect 2 uploads: history split (HISTORY.txt) + current input split (INPUT.txt)
+	if len(ds.uploadCalls) != 2 {
+		t.Fatalf("expected 2 uploads (history + current input), got %d", len(ds.uploadCalls))
 	}
-	if full.HistoryText != string(ds.uploadCalls[0].Data) {
+	// Find the history upload (HISTORY.txt)
+	var historyUpload *dsclient.UploadFileRequest
+	for i := range ds.uploadCalls {
+		if ds.uploadCalls[i].Filename == "HISTORY.txt" {
+			historyUpload = &ds.uploadCalls[i]
+			break
+		}
+	}
+	if historyUpload == nil {
+		t.Fatalf("expected HISTORY.txt upload")
+	}
+	if full.HistoryText != string(historyUpload.Data) {
 		t.Fatalf("expected persisted history text to match uploaded HISTORY.txt contents")
 	}
 }

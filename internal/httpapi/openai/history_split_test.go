@@ -206,17 +206,25 @@ func TestChatCompletionsHistorySplitUploadsHistoryFileAndKeepsLatestPrompt(t *te
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
+	// Expect 2 uploads: HISTORY.txt + INPUT.txt
+	if len(ds.uploadCalls) != 2 {
+		t.Fatalf("expected 2 upload calls (history + current input), got %d", len(ds.uploadCalls))
 	}
-	upload := ds.uploadCalls[0]
-	if upload.Filename != "HISTORY.txt" {
-		t.Fatalf("unexpected upload filename: %q", upload.Filename)
+	// Find history upload
+	var historyUpload dsclient.UploadFileRequest
+	for _, u := range ds.uploadCalls {
+		if u.Filename == "HISTORY.txt" {
+			historyUpload = u
+			break
+		}
 	}
-	if upload.Purpose != "assistants" {
-		t.Fatalf("unexpected purpose: %q", upload.Purpose)
+	if historyUpload.Filename != "HISTORY.txt" {
+		t.Fatalf("unexpected upload filename: %q", historyUpload.Filename)
 	}
-	historyText := string(upload.Data)
+	if historyUpload.Purpose != "assistants" {
+		t.Fatalf("unexpected purpose: %q", historyUpload.Purpose)
+	}
+	historyText := string(historyUpload.Data)
 	if !strings.Contains(historyText, "[file content end]") || !strings.Contains(historyText, "[file name]: IGNORE") {
 		t.Fatalf("expected injected IGNORE wrapper, got %s", historyText)
 	}
@@ -227,15 +235,17 @@ func TestChatCompletionsHistorySplitUploadsHistoryFileAndKeepsLatestPrompt(t *te
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "latest user turn") {
-		t.Fatalf("expected latest turn in completion prompt, got %s", promptText)
+	// After current input split, the prompt should contain the file reference instead of raw text
+	if !strings.Contains(promptText, "[文件引用: INPUT.txt]") {
+		t.Fatalf("expected file reference in completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
 		t.Fatalf("expected historical turns removed from completion prompt, got %s", promptText)
 	}
 	refIDs, _ := ds.completionReq["ref_file_ids"].([]any)
-	if len(refIDs) == 0 || refIDs[0] != "file-inline-1" {
-		t.Fatalf("expected uploaded history file to be first ref_file_id, got %#v", ds.completionReq["ref_file_ids"])
+	// Expect 2 ref files: HISTORY.txt + INPUT.txt
+	if len(refIDs) < 2 {
+		t.Fatalf("expected 2 ref_file_ids (history + input), got %#v", ds.completionReq["ref_file_ids"])
 	}
 }
 
@@ -267,15 +277,17 @@ func TestResponsesHistorySplitUploadsHistoryAndKeepsLatestPrompt(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
+	// Expect 2 uploads: HISTORY.txt + INPUT.txt
+	if len(ds.uploadCalls) != 2 {
+		t.Fatalf("expected 2 upload calls (history + current input), got %d", len(ds.uploadCalls))
 	}
 	if ds.completionReq == nil {
 		t.Fatal("expected completion payload to be captured")
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
-	if !strings.Contains(promptText, "latest user turn") {
-		t.Fatalf("expected latest turn in completion prompt, got %s", promptText)
+	// After current input split, the prompt should contain the file reference instead of raw text
+	if !strings.Contains(promptText, "[文件引用: INPUT.txt]") {
+		t.Fatalf("expected file reference in completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
 		t.Fatalf("expected historical turns removed from completion prompt, got %s", promptText)
@@ -407,14 +419,16 @@ func TestHistorySplitWorksAcrossAutoDeleteModes(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 			}
-			if len(ds.uploadCalls) != 1 {
-				t.Fatalf("expected history split upload for mode=%s, got %d", mode, len(ds.uploadCalls))
+			// Expect 2 uploads: HISTORY.txt + INPUT.txt
+			if len(ds.uploadCalls) != 2 {
+				t.Fatalf("expected 2 uploads (history + current input) for mode=%s, got %d", mode, len(ds.uploadCalls))
 			}
 			if ds.completionReq == nil {
 				t.Fatalf("expected completion payload for mode=%s", mode)
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
-			if !strings.Contains(promptText, "latest user turn") || strings.Contains(promptText, "first user turn") {
+			// After current input split, prompt should contain file reference, not raw "latest user turn"
+			if !strings.Contains(promptText, "[文件引用: INPUT.txt]") || strings.Contains(promptText, "first user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -147,8 +148,10 @@ func (m *inlineUploadDSStub) UploadFile(ctx context.Context, _ *auth.RequestAuth
 	if m.uploadErr != nil {
 		return nil, m.uploadErr
 	}
+	// Generate unique file ID based on upload count to avoid deduplication
+	fileID := fmt.Sprintf("file-inline-%d", len(m.uploadCalls))
 	return &dsclient.UploadFileResult{
-		ID:       "file-inline-1",
+		ID:       fileID,
 		Filename: req.Filename,
 		Bytes:    int64(len(req.Data)),
 		Status:   "uploaded",
