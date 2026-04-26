@@ -154,12 +154,16 @@ func buildContextPrompt() string {
 	return sb.String()
 }
 
-// buildCurrentTurnContent builds content from all current turn messages
+// buildCurrentTurnContent builds content from all current turn messages (excluding system messages)
 func buildCurrentTurnContent(messages []any) string {
 	var parts []string
 	for _, msg := range messages {
 		m, ok := msg.(map[string]any)
 		if !ok {
+			continue
+		}
+		// Skip system messages - they should not be in the file content
+		if isSystemMessage(msg) {
 			continue
 		}
 		content := extractMessageContent(m)
