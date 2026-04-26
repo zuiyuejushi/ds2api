@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"ds2api/internal/auth"
 	dsclient "ds2api/internal/deepseek/client"
-	"ds2api/internal/config"
 	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
 )
@@ -19,6 +19,27 @@ const (
 	currentInputPurpose     = "assistants"
 )
 
+// Internal system prompt content that should be excluded from INPUT.txt
+// This is the prompt added by buildConversationContinuityInstructions
+var internalSystemPromptPatterns = []string{
+	"Continue the conversation from the full prior context and the latest tool results.",
+	"Treat earlier messages as binding context; answer the user's current request as a continuation, not a restart.",
+	"Keep reasoning internal. Do not leave the final user-facing answer only in reasoning; always provide the answer in visible assistant content.",
+}
+
+// Internal prompt markers that should be stripped from the uploaded content
+var internalPromptMarkers = []*regexp.Regexp{
+	regexp.MustCompile(`<｜begin▁of▁sentence｜>`),
+	regexp.MustCompile(`<｜System｜>`),
+	regexp.MustCompile(`<｜User｜>`),
+	regexp.MustCompile(`<｜Assistant｜>`),
+	regexp.MustCompile(`<｜Tool｜>`),
+	regexp.MustCompile(`<｜end▁of▁sentence｜>`),
+	regexp.MustCompile(`<｜end▁of▁toolresults｜>`),
+	regexp.MustCompile(`<｜end▁of▁instructions｜>`),
+	regexp.MustCompile(`\d{13}`), // Millisecond timestamps
+}
+
 // CurrentInputSplitService handles splitting the current user input into a file
 // when it exceeds the model's context limit.
 type CurrentInputSplitService struct {
@@ -26,26 +47,28 @@ type CurrentInputSplitService struct {
 	DS    shared.DeepSeekCaller
 }
 
-// Apply uploads the last user message as a file unconditionally.
+// Apply uploads the Coding Agent prompt + user input as a file unconditionally.
+// This excludes our internal system prompts (conversation continuity instructions).
 // This should be called after history split to ensure we're only processing the current turn.
 func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptcompat.StandardRequest) (promptcompat.StandardRequest, error) {
 	if s.DS == nil || s.Store == nil || a == nil {
 		return stdReq, nil
 	}
 
-	// Find the last user message
-	lastUserMsg, lastUserIndex := extractLastUserMessage(stdReq.Messages)
-	if lastUserMsg == nil {
-		return stdReq, nil
-	}
-
-	// Get the content of the last user message
-	content := extractMessageContent(lastUserMsg)
+	// Build content from all messages (excluding history which was already split)
+	// This includes Coding Agent's system prompt and user input
+	content := buildCurrentTurnContent(stdReq.Messages)
 	if strings.TrimSpace(content) == "" {
 		return stdReq, nil
 	}
 
-	// Always convert current input to file regardless of length
+	// Strip internal system prompts (our conversation continuity instructions)
+	content = stripInternalSystemPrompts(content)
+
+	// Strip internal markers
+	content = stripInternalMarkers(content)
+
+	// Build the transcript
 	inputText := buildCurrentInputTranscript(content)
 	if strings.TrimSpace(inputText) == "" {
 		return stdReq, errors.New("current input split produced empty transcript")
@@ -67,11 +90,13 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		return stdReq, errors.New("upload current input file returned empty file id")
 	}
 
-	// Log for debugging
-	config.Logger.Debug("[current_input_split] uploaded file", "file_id", fileID, "filename", currentInputFilename, "bytes", len(inputText))
+	// Find the last user message index to replace
+	_, lastUserIndex := extractLastUserMessage(stdReq.Messages)
+	if lastUserIndex < 0 {
+		return stdReq, nil
+	}
 
 	// Replace the last user message with a reference to the uploaded file
-	// Use a strong citation format to ensure the model references the file
 	replacementMsg := map[string]any{
 		"role":    "user",
 		"content": fmt.Sprintf("[文件引用: %s]\n请查看上传的文件内容并回答相关问题。", currentInputFilename),
@@ -87,10 +112,40 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
 	stdReq.FinalPrompt, stdReq.ToolNames = promptcompat.BuildOpenAIPrompt(newMessages, stdReq.ToolsRaw, "", stdReq.ToolChoice, stdReq.Thinking)
 
-	// Log final state for debugging
-	config.Logger.Debug("[current_input_split] updated request", "ref_file_ids", stdReq.RefFileIDs, "final_prompt_length", len(stdReq.FinalPrompt))
-
 	return stdReq, nil
+}
+
+// buildCurrentTurnContent builds content from all current turn messages
+// (excluding history messages that were already split to HISTORY.txt)
+func buildCurrentTurnContent(messages []any) string {
+	var parts []string
+	for _, msg := range messages {
+		m, ok := msg.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := extractMessageContent(m)
+		if strings.TrimSpace(content) != "" {
+			parts = append(parts, content)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// stripInternalSystemPrompts removes our internal conversation continuity instructions
+func stripInternalSystemPrompts(content string) string {
+	for _, pattern := range internalSystemPromptPatterns {
+		content = strings.ReplaceAll(content, pattern, "")
+	}
+	return strings.TrimSpace(content)
+}
+
+// stripInternalMarkers removes internal prompt markers
+func stripInternalMarkers(content string) string {
+	for _, re := range internalPromptMarkers {
+		content = re.ReplaceAllString(content, "")
+	}
+	return strings.TrimSpace(content)
 }
 
 // extractLastUserMessage finds the last user message in the messages slice
@@ -139,7 +194,6 @@ func extractMessageContent(msg map[string]any) string {
 }
 
 // buildCurrentInputTranscript builds the transcript content for the current input file
-// This uses a prominent format to ensure the model recognizes it as the main input
 func buildCurrentInputTranscript(content string) string {
 	var sb strings.Builder
 	sb.WriteString("[当前用户输入 - Current User Input]\n")
