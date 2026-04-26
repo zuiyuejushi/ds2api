@@ -102,7 +102,8 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		"content": replacementContent,
 	}
 
-	// Create new messages slice, filtering out internal system prompts and replacing last user message
+	// Create new messages slice, filtering out ALL system messages and replacing last user message
+	// All system prompts (including Coding Agent) should be in the file, not in FinalPrompt
 	newMessages := make([]any, 0, len(stdReq.Messages))
 	for i, msg := range stdReq.Messages {
 		if i == lastUserIndex {
@@ -110,8 +111,8 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 			newMessages = append(newMessages, replacementMsg)
 			continue
 		}
-		// Filter out system messages containing internal prompts
-		if isInternalSystemMessage(msg) {
+		// Filter out ALL system messages - they should be in the file, not in FinalPrompt
+		if isSystemMessage(msg) {
 			continue
 		}
 		newMessages = append(newMessages, msg)
@@ -195,6 +196,16 @@ func isInternalSystemMessage(msg any) bool {
 		}
 	}
 	return false
+}
+
+// isSystemMessage checks if a message is any system message (including Coding Agent prompts)
+func isSystemMessage(msg any) bool {
+	m, ok := msg.(map[string]any)
+	if !ok {
+		return false
+	}
+	role := strings.ToLower(strings.TrimSpace(shared.AsString(m["role"])))
+	return role == "system" || role == "developer"
 }
 
 // stripInternalMarkers removes internal prompt markers
