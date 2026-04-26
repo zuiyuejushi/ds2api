@@ -224,7 +224,6 @@ func buildCurrentInputPrompt(existingRefFileIDs []string, currentFileID string) 
 	// Use DeepSeek's official file reference format
 	// [file name]: FILENAME
 	// [file content begin]
-	// <content>
 	// [file content end]
 	// <user question>
 
@@ -232,21 +231,18 @@ func buildCurrentInputPrompt(existingRefFileIDs []string, currentFileID string) 
 	if hasHistory {
 		sb.WriteString("[file name]: HISTORY.txt\n")
 		sb.WriteString("[file content begin]\n")
-		sb.WriteString("【历史上下文 - 仅供参考】\n")
-		sb.WriteString("以下内容包含历史对话，仅供参考。\n")
-		sb.WriteString("[file content end]\n\n")
+		sb.WriteString("[file content end]\n")
+		sb.WriteString("【历史上下文】以上内容包含历史对话，仅供参考。\n\n")
 	}
 
 	// Current task last (highest priority - closest to user question)
 	sb.WriteString(fmt.Sprintf("[file name]: %s\n", currentInputFilename))
 	sb.WriteString("[file content begin]\n")
-	sb.WriteString("【当前任务 - 请优先关注】\n")
-	sb.WriteString("这是你的当前任务，请优先阅读并理解以下内容。\n")
-	sb.WriteString("[file content end]\n\n")
+	sb.WriteString("[file content end]\n")
+	sb.WriteString("【当前任务 - 请优先关注】以上内容是你的当前任务，请优先阅读并理解。\n\n")
 
 	// User question/instruction at the end
-	sb.WriteString("【指令】\n")
-	sb.WriteString("请基于上述【当前任务】文件中的内容回答。如果与历史上下文有冲突，请以当前任务为准。")
+	sb.WriteString("【指令】请基于上述【当前任务】文件中的内容回答。如果与历史上下文有冲突，请以当前任务为准。")
 
 	return sb.String()
 }
