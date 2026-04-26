@@ -112,7 +112,8 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 
 	// Update the request
 	stdReq.Messages = newMessages
-	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
+	// Append fileID to the end to match prompt order (HISTORY first, INPUT last)
+	stdReq.RefFileIDs = appendUniqueRefFileID(stdReq.RefFileIDs, fileID)
 	stdReq.FinalPrompt, stdReq.ToolNames = promptcompat.BuildOpenAIPrompt(newMessages, stdReq.ToolsRaw, "", stdReq.ToolChoice, stdReq.Thinking)
 
 	return stdReq, nil
@@ -242,6 +243,21 @@ func buildCurrentInputPrompt(existingRefFileIDs []string, currentFileID string) 
 	sb.WriteString("[file content begin]\n")
 
 	return sb.String()
+}
+
+// appendUniqueRefFileID appends fileID to the end of existing slice (to maintain prompt order)
+func appendUniqueRefFileID(existing []string, fileID string) []string {
+	fileID = strings.TrimSpace(fileID)
+	if fileID == "" {
+		return existing
+	}
+	// Check if already exists
+	for _, id := range existing {
+		if strings.EqualFold(strings.TrimSpace(id), fileID) {
+			return existing
+		}
+	}
+	return append(existing, fileID)
 }
 
 // UploadCurrentInputFromRequest uploads the current turn content from the raw request
