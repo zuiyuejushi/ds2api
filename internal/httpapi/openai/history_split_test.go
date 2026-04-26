@@ -236,7 +236,7 @@ func TestChatCompletionsHistorySplitUploadsHistoryFileAndKeepsLatestPrompt(t *te
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
 	// After current input split, the prompt should contain the file reference instead of raw text
-	if !strings.Contains(promptText, "[文件引用: INPUT.txt]") {
+	if !strings.Contains(promptText, "[file name]: INPUT.txt") {
 		t.Fatalf("expected file reference in completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
@@ -286,7 +286,7 @@ func TestResponsesHistorySplitUploadsHistoryAndKeepsLatestPrompt(t *testing.T) {
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
 	// After current input split, the prompt should contain the file reference instead of raw text
-	if !strings.Contains(promptText, "[文件引用: INPUT.txt]") {
+	if !strings.Contains(promptText, "[file name]: INPUT.txt") {
 		t.Fatalf("expected file reference in completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
@@ -428,7 +428,7 @@ func TestHistorySplitWorksAcrossAutoDeleteModes(t *testing.T) {
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
 			// After current input split, prompt should contain file reference, not raw "latest user turn"
-			if !strings.Contains(promptText, "[文件引用: INPUT.txt]") || strings.Contains(promptText, "first user turn") {
+			if !strings.Contains(promptText, "[file name]: INPUT.txt") || strings.Contains(promptText, "first user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

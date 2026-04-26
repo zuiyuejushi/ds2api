@@ -133,7 +133,7 @@ func TestHandleVercelStreamPrepareAppliesHistorySplit(t *testing.T) {
 	}
 	promptText, _ := payload["prompt"].(string)
 	// After current input split, prompt should contain file reference
-	if !strings.Contains(promptText, "[文件引用: INPUT.txt]") {
+	if !strings.Contains(promptText, "[file name]: INPUT.txt") {
 		t.Fatalf("expected file reference in prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
