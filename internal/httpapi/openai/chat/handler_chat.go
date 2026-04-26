@@ -59,19 +59,26 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIInlineFileError(w, err)
 		return
 	}
+	// Normalize request first to get stdReq for history (preserves original user input)
 	stdReq, err := promptcompat.NormalizeOpenAIChatRequest(h.Store, req, requestTraceID(r))
 	if err != nil {
 		writeOpenAIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Start history before any modifications to preserve original user input
+	historySession := startChatHistory(h.ChatHistory, r, a, stdReq)
+	// Apply history split on normalized request
 	stdReq, err = h.applyHistorySplit(r.Context(), a, stdReq)
 	if err != nil {
 		status, message := mapHistorySplitError(err)
 		writeOpenAIError(w, status, message)
 		return
 	}
-	// Start history before current input split to preserve original user input
-	historySession := startChatHistory(h.ChatHistory, r, a, stdReq)
+	// Update history text after history split
+	if historySession != nil {
+		historySession.updateHistoryText(stdReq.HistoryText)
+	}
+	// Upload current input (Coding Agent prompt + user input) after history split
 	stdReq, err = h.applyCurrentInputSplit(r.Context(), a, stdReq)
 	if err != nil {
 		status, message := mapCurrentInputSplitError(err)

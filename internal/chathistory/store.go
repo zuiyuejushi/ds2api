@@ -109,6 +109,7 @@ type UpdateParams struct {
 	FinishReason     string
 	Usage            map[string]any
 	Completed        bool
+	HistoryText      string // Optional: update history text after history split
 }
 
 type detailEnvelope struct {
@@ -292,6 +293,10 @@ func (s *Store) Update(id string, params UpdateParams) (Entry, error) {
 	}
 	if params.Completed {
 		item.CompletedAt = now
+	}
+	// Update HistoryText if provided (for history split updates)
+	if strings.TrimSpace(params.HistoryText) != "" {
+		item.HistoryText = params.HistoryText
 	}
 	s.details[target] = item
 	s.markDetailDirtyLocked(target)

@@ -210,6 +210,21 @@ func (s *chatHistorySession) retryMissingEntry() bool {
 	return true
 }
 
+// updateHistoryText updates the HistoryText field after history split
+func (s *chatHistorySession) updateHistoryText(historyText string) {
+	if s == nil || s.store == nil {
+		return
+	}
+	s.startParams.HistoryText = historyText
+	// Also update the stored entry if possible
+	if s.entryID != "" {
+		s.store.Update(s.entryID, chathistory.UpdateParams{
+			Status:      "streaming",
+			HistoryText: historyText,
+		})
+	}
+}
+
 func (s *chatHistorySession) persistUpdate(params chathistory.UpdateParams) {
 	if s == nil || s.store == nil || s.disabled {
 		return

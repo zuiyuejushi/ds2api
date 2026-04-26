@@ -203,3 +203,94 @@ func buildCurrentInputTranscript(content string) string {
 	sb.WriteString("[输入结束 - End of Input]")
 	return sb.String()
 }
+
+// UploadCurrentInputFromRequest uploads the current turn content from the raw request
+// before prompt building. This modifies the request to reference the uploaded file.
+func UploadCurrentInputFromRequest(ctx context.Context, a *auth.RequestAuth, ds shared.DeepSeekCaller, req map[string]any) (map[string]any, error) {
+	if ds == nil || a == nil {
+		return req, nil
+	}
+
+	messagesRaw, _ := req["messages"].([]any)
+	if len(messagesRaw) == 0 {
+		return req, nil
+	}
+
+	// Build content from all messages (this includes Coding Agent prompt + user input)
+	var parts []string
+	for _, msg := range messagesRaw {
+		m, ok := msg.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := extractMessageContent(m)
+		if strings.TrimSpace(content) != "" {
+			parts = append(parts, content)
+		}
+	}
+	content := strings.Join(parts, "\n\n")
+	if strings.TrimSpace(content) == "" {
+		return req, nil
+	}
+
+	// Strip internal system prompts
+	content = stripInternalSystemPrompts(content)
+
+	// Strip internal markers
+	content = stripInternalMarkers(content)
+
+	// Build the transcript
+	inputText := buildCurrentInputTranscript(content)
+	if strings.TrimSpace(inputText) == "" {
+		return req, errors.New("current input split produced empty transcript")
+	}
+
+	// Upload the current input as a file
+	result, err := ds.UploadFile(ctx, a, dsclient.UploadFileRequest{
+		Filename:    currentInputFilename,
+		ContentType: currentInputContentType,
+		Purpose:     currentInputPurpose,
+		Data:        []byte(inputText),
+	}, 3)
+	if err != nil {
+		return req, fmt.Errorf("upload current input file: %w", err)
+	}
+
+	fileID := strings.TrimSpace(result.ID)
+	if fileID == "" {
+		return req, errors.New("upload current input file returned empty file id")
+	}
+
+	// Find the last user message index to replace
+	_, lastUserIndex := extractLastUserMessage(messagesRaw)
+	if lastUserIndex < 0 {
+		return req, nil
+	}
+
+	// Replace the last user message with a reference to the uploaded file
+	replacementMsg := map[string]any{
+		"role":    "user",
+		"content": fmt.Sprintf("[文件引用: %s]\n请查看上传的文件内容并回答相关问题。", currentInputFilename),
+	}
+
+	// Create new messages slice with the replacement
+	newMessages := make([]any, len(messagesRaw))
+	copy(newMessages, messagesRaw)
+	newMessages[lastUserIndex] = replacementMsg
+
+	// Update the request
+	req["messages"] = newMessages
+
+	// Add file_id to ref_file_ids if present
+	refFileIDsAny, _ := req["ref_file_ids"].([]any)
+	refFileIDs := make([]string, 0, len(refFileIDsAny))
+	for _, id := range refFileIDsAny {
+		if s, ok := id.(string); ok {
+			refFileIDs = append(refFileIDs, s)
+		}
+	}
+	refFileIDs = prependUniqueRefFileID(refFileIDs, fileID)
+	req["ref_file_ids"] = refFileIDs
+
+	return req, nil
+}

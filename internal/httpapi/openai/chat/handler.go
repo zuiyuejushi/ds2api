@@ -56,6 +56,15 @@ func (h *Handler) applyCurrentInputSplit(ctx context.Context, a *auth.RequestAut
 	return history.CurrentInputSplitService{Store: h.Store, DS: h.DS}.Apply(ctx, a, stdReq)
 }
 
+// uploadCurrentInput uploads the current turn content (Coding Agent prompt + user input) as a file
+// before the prompt is built. This modifies the request to reference the uploaded file.
+func (h *Handler) uploadCurrentInput(ctx context.Context, a *auth.RequestAuth, req map[string]any) (map[string]any, error) {
+	if h == nil || h.DS == nil {
+		return req, nil
+	}
+	return history.UploadCurrentInputFromRequest(ctx, a, h.DS, req)
+}
+
 func (h *Handler) preprocessInlineFileInputs(ctx context.Context, a *auth.RequestAuth, req map[string]any) error {
 	if h == nil {
 		return nil
