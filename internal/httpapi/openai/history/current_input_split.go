@@ -24,6 +24,12 @@ var internalSystemPromptPatterns = []string{
 	"Continue the conversation from the full prior context and the latest tool results.",
 	"Treat earlier messages as binding context; answer the user's current request as a continuation, not a restart.",
 	"Keep reasoning internal. Do not leave the final user-facing answer only in reasoning; always provide the answer in visible assistant content.",
+	"You have access to these tools:",
+	"TOOL CALL FORMAT",
+	"Remember: The ONLY valid way to use tools is the <tool_calls>",
+	"JSON FORMAT IS STRICTLY FORBIDDEN",
+	"BEFORE FINALIZING YOUR TOOL CALL OUTPUT",
+	"Now output THE CORRECT TOOL CALL BLOCK AND NOTHING ELSE",
 }
 
 // Internal prompt markers that should be stripped
