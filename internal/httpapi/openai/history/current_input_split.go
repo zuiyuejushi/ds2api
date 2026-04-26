@@ -14,20 +14,19 @@ import (
 )
 
 const (
-	currentInputFilename    = "INPUT.txt"
+	contextFilename         = "CONTEXT.txt"
 	currentInputContentType = "text/plain; charset=utf-8"
 	currentInputPurpose     = "assistants"
 )
 
-// Internal system prompt content that should be excluded from INPUT.txt
-// This is the prompt added by buildConversationContinuityInstructions
+// Internal system prompt content that should be excluded
 var internalSystemPromptPatterns = []string{
 	"Continue the conversation from the full prior context and the latest tool results.",
 	"Treat earlier messages as binding context; answer the user's current request as a continuation, not a restart.",
 	"Keep reasoning internal. Do not leave the final user-facing answer only in reasoning; always provide the answer in visible assistant content.",
 }
 
-// Internal prompt markers that should be stripped from the uploaded content
+// Internal prompt markers that should be stripped
 var internalPromptMarkers = []*regexp.Regexp{
 	regexp.MustCompile(`<｜begin▁of▁sentence｜>`),
 	regexp.MustCompile(`<｜System｜>`),
@@ -37,57 +36,50 @@ var internalPromptMarkers = []*regexp.Regexp{
 	regexp.MustCompile(`<｜end▁of▁sentence｜>`),
 	regexp.MustCompile(`<｜end▁of▁toolresults｜>`),
 	regexp.MustCompile(`<｜end▁of▁instructions｜>`),
-	regexp.MustCompile(`\d{13}`), // Millisecond timestamps
+	regexp.MustCompile(`\d{13}`),
 }
 
 // CurrentInputSplitService handles splitting the current user input into a file
-// when it exceeds the model's context limit.
 type CurrentInputSplitService struct {
 	Store shared.ConfigReader
 	DS    shared.DeepSeekCaller
 }
 
-// Apply uploads the Coding Agent prompt + user input as a file unconditionally.
-// This excludes our internal system prompts (conversation continuity instructions).
-// This should be called after history split to ensure we're only processing the current turn.
+// Apply uploads history + current input as a single file unconditionally.
+// History is placed first, current input is placed last (closest to user question).
+// This excludes our internal system prompts.
 func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptcompat.StandardRequest) (promptcompat.StandardRequest, error) {
 	if s.DS == nil || s.Store == nil || a == nil {
 		return stdReq, nil
 	}
 
-	// Build content from all messages (excluding history which was already split)
-	// This includes Coding Agent's system prompt and user input
-	content := buildCurrentTurnContent(stdReq.Messages)
-	if strings.TrimSpace(content) == "" {
+	// Get history text if available (keep full content for the file)
+	historyText := strings.TrimSpace(stdReq.HistoryText)
+
+	// Build current turn content from messages (keep full content for the file)
+	currentContent := buildCurrentTurnContent(stdReq.Messages)
+
+	// Combine history + current input into one file
+	// History first, current input last (for priority)
+	combinedContent := buildCombinedTranscript(historyText, currentContent)
+	if strings.TrimSpace(combinedContent) == "" {
 		return stdReq, nil
 	}
 
-	// Strip internal system prompts (our conversation continuity instructions)
-	content = stripInternalSystemPrompts(content)
-
-	// Strip internal markers
-	content = stripInternalMarkers(content)
-
-	// Build the transcript
-	inputText := buildCurrentInputTranscript(content)
-	if strings.TrimSpace(inputText) == "" {
-		return stdReq, errors.New("current input split produced empty transcript")
-	}
-
-	// Upload the current input as a file
+	// Upload as a single file
 	result, err := s.DS.UploadFile(ctx, a, dsclient.UploadFileRequest{
-		Filename:    currentInputFilename,
+		Filename:    contextFilename,
 		ContentType: currentInputContentType,
 		Purpose:     currentInputPurpose,
-		Data:        []byte(inputText),
+		Data:        []byte(combinedContent),
 	}, 3)
 	if err != nil {
-		return stdReq, fmt.Errorf("upload current input file: %w", err)
+		return stdReq, fmt.Errorf("upload context file: %w", err)
 	}
 
 	fileID := strings.TrimSpace(result.ID)
 	if fileID == "" {
-		return stdReq, errors.New("upload current input file returned empty file id")
+		return stdReq, errors.New("upload context file returned empty file id")
 	}
 
 	// Find the last user message index to replace
@@ -96,31 +88,81 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		return stdReq, nil
 	}
 
-	// Build replacement message with clear priority indication
-	// If there's history, we need to guide the model to prioritize current input
-	replacementContent := buildCurrentInputPrompt(stdReq.RefFileIDs, fileID)
+	// Build replacement message with file reference
+	replacementContent := buildContextPrompt()
 
 	replacementMsg := map[string]any{
 		"role":    "user",
 		"content": replacementContent,
 	}
 
-	// Create new messages slice with the replacement
-	newMessages := make([]any, len(stdReq.Messages))
-	copy(newMessages, stdReq.Messages)
-	newMessages[lastUserIndex] = replacementMsg
+	// Create new messages slice, filtering out internal system prompts and replacing last user message
+	newMessages := make([]any, 0, len(stdReq.Messages))
+	for i, msg := range stdReq.Messages {
+		if i == lastUserIndex {
+			// Replace the last user message with file reference
+			newMessages = append(newMessages, replacementMsg)
+			continue
+		}
+		// Filter out system messages containing internal prompts
+		if isInternalSystemMessage(msg) {
+			continue
+		}
+		newMessages = append(newMessages, msg)
+	}
 
-	// Update the request
+	// Update the request - clear history text since it's now in the file
 	stdReq.Messages = newMessages
-	// Append fileID to the end to match prompt order (HISTORY first, INPUT last)
-	stdReq.RefFileIDs = appendUniqueRefFileID(stdReq.RefFileIDs, fileID)
+	stdReq.HistoryText = ""
+	stdReq.RefFileIDs = []string{fileID}
 	stdReq.FinalPrompt, stdReq.ToolNames = promptcompat.BuildOpenAIPrompt(newMessages, stdReq.ToolsRaw, "", stdReq.ToolChoice, stdReq.Thinking)
 
 	return stdReq, nil
 }
 
+// buildCombinedTranscript builds a single transcript with history first, current input last
+func buildCombinedTranscript(historyText, currentContent string) string {
+	var sb strings.Builder
+
+	// Use DeepSeek's file reference format
+	// [file content end]
+	// <content>
+	// [file name]: FILENAME
+	// [file content begin]
+
+	// History section (if exists) - placed first (lower priority)
+	if historyText != "" {
+		sb.WriteString("[file content end]\n\n")
+		sb.WriteString("【历史上下文】\n")
+		sb.WriteString(historyText)
+		sb.WriteString("\n\n")
+		sb.WriteString("[file name]: HISTORY\n")
+		sb.WriteString("[file content begin]\n")
+	}
+
+	// Current input section - placed last (highest priority, closest to user)
+	if currentContent != "" {
+		sb.WriteString("[file content end]\n\n")
+		sb.WriteString("【当前任务 - 请优先关注】\n")
+		sb.WriteString(currentContent)
+		sb.WriteString("\n\n")
+		sb.WriteString("[file name]: CURRENT\n")
+		sb.WriteString("[file content begin]\n")
+	}
+
+	return sb.String()
+}
+
+// buildContextPrompt builds the prompt that references the combined context file
+func buildContextPrompt() string {
+	var sb strings.Builder
+	sb.WriteString("[file content end]\n\n")
+	sb.WriteString(fmt.Sprintf("[file name]: %s\n", contextFilename))
+	sb.WriteString("[file content begin]\n")
+	return sb.String()
+}
+
 // buildCurrentTurnContent builds content from all current turn messages
-// (excluding history messages that were already split to HISTORY.txt)
 func buildCurrentTurnContent(messages []any) string {
 	var parts []string
 	for _, msg := range messages {
@@ -142,6 +184,26 @@ func stripInternalSystemPrompts(content string) string {
 		content = strings.ReplaceAll(content, pattern, "")
 	}
 	return strings.TrimSpace(content)
+}
+
+// isInternalSystemMessage checks if a message is a system message containing internal prompts
+func isInternalSystemMessage(msg any) bool {
+	m, ok := msg.(map[string]any)
+	if !ok {
+		return false
+	}
+	role := strings.ToLower(strings.TrimSpace(shared.AsString(m["role"])))
+	if role != "system" {
+		return false
+	}
+	content := extractMessageContent(m)
+	// Check if content contains any internal system prompt patterns
+	for _, pattern := range internalSystemPromptPatterns {
+		if strings.Contains(content, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // stripInternalMarkers removes internal prompt markers
@@ -178,7 +240,6 @@ func extractMessageContent(msg map[string]any) string {
 	case string:
 		return v
 	case []any:
-		// Handle array content (e.g., multimodal messages)
 		parts := make([]string, 0, len(v))
 		for _, item := range v {
 			if m, ok := item.(map[string]any); ok {
@@ -197,69 +258,6 @@ func extractMessageContent(msg map[string]any) string {
 	}
 }
 
-// buildCurrentInputTranscript builds the transcript content for the current input file
-func buildCurrentInputTranscript(content string) string {
-	var sb strings.Builder
-	sb.WriteString("[当前用户输入 - Current User Input]\n")
-	sb.WriteString("=" + strings.Repeat("=", 50) + "\n\n")
-	sb.WriteString(content)
-	sb.WriteString("\n\n" + strings.Repeat("=", 51) + "\n")
-	sb.WriteString("[输入结束 - End of Input]")
-	return sb.String()
-}
-
-// buildCurrentInputPrompt builds the prompt that references the current input file
-// Uses DeepSeek's file reference format similar to HISTORY.txt
-func buildCurrentInputPrompt(existingRefFileIDs []string, currentFileID string) string {
-	var sb strings.Builder
-
-	// Check if there's history (HISTORY.txt would be in ref_file_ids)
-	hasHistory := false
-	for _, id := range existingRefFileIDs {
-		if strings.TrimSpace(id) != "" && strings.TrimSpace(id) != currentFileID {
-			hasHistory = true
-			break
-		}
-	}
-
-	// Use DeepSeek's file reference format (same as HISTORY.txt format)
-	// [file content end]
-	// <hint text>
-	// [file name]: FILENAME
-	// [file content begin]
-
-	// History first (lower priority)
-	if hasHistory {
-		sb.WriteString("[file content end]\n\n")
-		sb.WriteString("【历史上下文 - 仅供参考】\n\n")
-		sb.WriteString("[file name]: HISTORY.txt\n")
-		sb.WriteString("[file content begin]\n")
-	}
-
-	// Current task last (highest priority - closest to user question)
-	sb.WriteString("[file content end]\n\n")
-	sb.WriteString("【当前任务 - 请优先关注】\n\n")
-	sb.WriteString(fmt.Sprintf("[file name]: %s\n", currentInputFilename))
-	sb.WriteString("[file content begin]\n")
-
-	return sb.String()
-}
-
-// appendUniqueRefFileID appends fileID to the end of existing slice (to maintain prompt order)
-func appendUniqueRefFileID(existing []string, fileID string) []string {
-	fileID = strings.TrimSpace(fileID)
-	if fileID == "" {
-		return existing
-	}
-	// Check if already exists
-	for _, id := range existing {
-		if strings.EqualFold(strings.TrimSpace(id), fileID) {
-			return existing
-		}
-	}
-	return append(existing, fileID)
-}
-
 // UploadCurrentInputFromRequest uploads the current turn content from the raw request
 // before prompt building. This modifies the request to reference the uploaded file.
 func UploadCurrentInputFromRequest(ctx context.Context, a *auth.RequestAuth, ds shared.DeepSeekCaller, req map[string]any) (map[string]any, error) {
@@ -272,7 +270,7 @@ func UploadCurrentInputFromRequest(ctx context.Context, a *auth.RequestAuth, ds 
 		return req, nil
 	}
 
-	// Build content from all messages (this includes Coding Agent prompt + user input)
+	// Build content from all messages
 	var parts []string
 	for _, msg := range messagesRaw {
 		m, ok := msg.(map[string]any)
@@ -303,7 +301,7 @@ func UploadCurrentInputFromRequest(ctx context.Context, a *auth.RequestAuth, ds 
 
 	// Upload the current input as a file
 	result, err := ds.UploadFile(ctx, a, dsclient.UploadFileRequest{
-		Filename:    currentInputFilename,
+		Filename:    contextFilename,
 		ContentType: currentInputContentType,
 		Purpose:     currentInputPurpose,
 		Data:        []byte(inputText),
@@ -326,7 +324,7 @@ func UploadCurrentInputFromRequest(ctx context.Context, a *auth.RequestAuth, ds 
 	// Replace the last user message with a reference to the uploaded file
 	replacementMsg := map[string]any{
 		"role":    "user",
-		"content": fmt.Sprintf("[文件引用: %s]\n请查看上传的文件内容并回答相关问题。", currentInputFilename),
+		"content": fmt.Sprintf("[文件引用: %s]\n请查看上传的文件内容并回答相关问题。", contextFilename),
 	}
 
 	// Create new messages slice with the replacement
@@ -349,4 +347,15 @@ func UploadCurrentInputFromRequest(ctx context.Context, a *auth.RequestAuth, ds 
 	req["ref_file_ids"] = refFileIDs
 
 	return req, nil
+}
+
+// buildCurrentInputTranscript builds the transcript content for the current input file
+func buildCurrentInputTranscript(content string) string {
+	var sb strings.Builder
+	sb.WriteString("[当前用户输入 - Current User Input]\n")
+	sb.WriteString("=" + strings.Repeat("=", 50) + "\n\n")
+	sb.WriteString(content)
+	sb.WriteString("\n\n" + strings.Repeat("=", 51) + "\n")
+	sb.WriteString("[输入结束 - End of Input]")
+	return sb.String()
 }
