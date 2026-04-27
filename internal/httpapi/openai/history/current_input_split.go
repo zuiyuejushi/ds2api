@@ -54,8 +54,7 @@ type CurrentInputSplitService struct {
 }
 
 // Apply uploads history + current input as a single file unconditionally.
-// History is placed first, current input is placed last (closest to user question).
-// This excludes our internal system prompts.
+// Order: history first, tools middle, current input last (closest to latest messages for attention).
 func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptcompat.StandardRequest) (promptcompat.StandardRequest, error) {
 	if s.DS == nil || s.Store == nil || a == nil {
 		return stdReq, nil
@@ -70,8 +69,8 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 	// Serialize tools into the file body — definitions + format instructions
 	toolsContent, toolNames := buildToolsContent(stdReq.ToolsRaw)
 
-	// Combine history + current input + tools into one file
-	// History first, current input middle, tools last (closest to user question)
+	// Combine history + tools + current input into one file
+	// Latest messages (tool results, etc.) are closest to the end for optimal attention
 	combinedContent := buildCombinedTranscript(historyText, currentContent, toolsContent)
 	if strings.TrimSpace(combinedContent) == "" {
 		return stdReq, nil
@@ -152,25 +151,26 @@ func buildToolsContent(toolsRaw any) (string, []string) {
 	return fmt.Sprintf("[Tools]\n%s\n\n%s\n\n%s", strings.Join(parts, "\n\n"), strings.Repeat("=", 50), toolcall.BuildToolCallInstructions(names)), names
 }
 
-// buildCombinedTranscript builds a single transcript with history, messages, and tools in order
+// buildCombinedTranscript builds a single transcript with history, tools, and messages in order.
+// Order: history (lowest priority), tools (reference), current messages (highest priority).
 func buildCombinedTranscript(historyText, currentContent, toolsContent string) string {
 	var sb strings.Builder
 
-	// History section (if exists) - placed first (lower priority)
+	// History section (if exists) - placed first (lowest priority)
 	if historyText != "" {
 		sb.WriteString(historyText)
 		sb.WriteString("\n\n")
 	}
 
-	// Current input section - middle priority
-	if currentContent != "" {
-		sb.WriteString(currentContent)
+	// Tools section - placed in the middle (reference material)
+	if toolsContent != "" {
+		sb.WriteString(toolsContent)
+		sb.WriteString("\n\n")
 	}
 
-	// Tools section - placed last (closest to user question, highest priority)
-	if toolsContent != "" {
-		sb.WriteString("\n\n")
-		sb.WriteString(toolsContent)
+	// Current input section - placed last (highest priority, closest to latest messages)
+	if currentContent != "" {
+		sb.WriteString(currentContent)
 	}
 
 	return sb.String()
