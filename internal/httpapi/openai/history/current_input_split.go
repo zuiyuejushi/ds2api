@@ -36,12 +36,12 @@ var internalSystemPromptPatterns = []string{
 
 // Internal prompt markers that should be stripped
 var internalPromptMarkers = []*regexp.Regexp{
-	regexp.MustCompile(`<｜begin▁of▁sentence｜>`),
+	regexp.MustCompile(``),
 	regexp.MustCompile(`<｜System｜>`),
 	regexp.MustCompile(`<｜User｜>`),
 	regexp.MustCompile(`<｜Assistant｜>`),
 	regexp.MustCompile(`<｜Tool｜>`),
-	regexp.MustCompile(`<｜end▁of▁sentence｜>`),
+	regexp.MustCompile(``),
 	regexp.MustCompile(`<｜end▁of▁toolresults｜>`),
 	regexp.MustCompile(`<｜end▁of▁instructions｜>`),
 	regexp.MustCompile(`\d{13}`),
@@ -67,8 +67,8 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 	// Build content from all messages — including system, user, assistant, tool
 	currentContent := buildCurrentTurnContent(stdReq.Messages)
 
-	// Serialize tools into the file body so they don't leak into the prompt
-	toolsContent := buildToolsContent(stdReq.ToolsRaw)
+	// Serialize tools into the file body — definitions + format instructions
+	toolsContent, toolNames := buildToolsContent(stdReq.ToolsRaw)
 
 	// Combine history + current input + tools into one file
 	// History first, current input middle, tools last (closest to user question)
@@ -94,8 +94,8 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 	}
 
 	// Replace ALL messages with just the file reference.
-	// Only system's own prompts (conversation continuity / reasoning instructions) reach the LLM inline.
-	// Everything else — history, user input, assistant replies, tool definitions — is in the uploaded file.
+	// Only system's own prompts reach the LLM inline:
+	// conversation continuity / reasoning instructions, and tool format instructions (injected below).
 	replacementContent := buildContextPrompt()
 	newMessages := []any{
 		map[string]any{
@@ -104,7 +104,10 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		},
 	}
 
-	// Update the request — tools (definitions + format instructions) are now fully in the file
+	// Inject tool format instructions (no schemas — schemas are in the file)
+	newMessages = promptcompat.InjectFormatInstructions(newMessages, toolNames)
+
+	// Update the request
 	stdReq.Messages = newMessages
 	stdReq.HistoryText = ""
 	stdReq.RefFileIDs = []string{fileID}
@@ -114,10 +117,11 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 }
 
 // buildToolsContent serializes tool definitions and format instructions into file-ready content.
-func buildToolsContent(toolsRaw any) string {
+// Returns the combined content and the tool names.
+func buildToolsContent(toolsRaw any) (string, []string) {
 	tools, ok := toolsRaw.([]any)
 	if !ok || len(tools) == 0 {
-		return ""
+		return "", nil
 	}
 	var parts []string
 	names := make([]string, 0, len(tools))
@@ -145,7 +149,7 @@ func buildToolsContent(toolsRaw any) string {
 		paramsJSON, _ := json.Marshal(params)
 		parts = append(parts, fmt.Sprintf("Tool: %s\nDescription: %s\nParameters: %s", name, desc, string(paramsJSON)))
 	}
-	return fmt.Sprintf("[Tools]\n%s\n\n%s\n\n%s", strings.Join(parts, "\n\n"), strings.Repeat("=", 50), toolcall.BuildToolCallInstructions(names))
+	return fmt.Sprintf("[Tools]\n%s\n\n%s\n\n%s", strings.Join(parts, "\n\n"), strings.Repeat("=", 50), toolcall.BuildToolCallInstructions(names)), names
 }
 
 // buildCombinedTranscript builds a single transcript with history, messages, and tools in order

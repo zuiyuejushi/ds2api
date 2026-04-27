@@ -52,6 +52,10 @@ func (s Service) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptco
 		return stdReq, errors.New("upload history file returned empty file id")
 	}
 
+	// Inject tool format instructions into the prompt (no schemas — schemas later go to file)
+	_, toolNames := buildToolsContent(stdReq.ToolsRaw)
+	promptMessages = promptcompat.InjectFormatInstructions(promptMessages, toolNames)
+
 	stdReq.Messages = promptMessages
 	stdReq.HistoryText = historyText
 	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)

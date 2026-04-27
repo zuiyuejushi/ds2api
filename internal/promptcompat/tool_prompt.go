@@ -8,6 +8,28 @@ import (
 	"ds2api/internal/toolcall"
 )
 
+// InjectFormatInstructions inserts tool format instructions (no schemas) into the prompt.
+// Caller-provided tool definitions live in the uploaded file; only the formatting rules
+// and self-check go into the inline prompt.
+func InjectFormatInstructions(messages []any, toolNames []string) []any {
+	if len(toolNames) == 0 {
+		return messages
+	}
+	instructions := toolcall.BuildToolCallInstructions(toolNames)
+	for i := range messages {
+		m, ok := messages[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		if m["role"] == "system" {
+			old, _ := m["content"].(string)
+			m["content"] = strings.TrimSpace(old + "\n\n" + instructions)
+			return messages
+		}
+	}
+	return append([]any{map[string]any{"role": "system", "content": instructions}}, messages...)
+}
+
 func injectToolPrompt(messages []map[string]any, tools []any, policy ToolChoicePolicy) ([]map[string]any, []string) {
 	if policy.IsNone() {
 		return messages, nil
