@@ -103,11 +103,11 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		},
 	}
 
-	// Update the request — clear history, tools, and raw messages
+	// Update the request — replace ref_file_ids with just the single merged file
 	stdReq.Messages = newMessages
 	stdReq.HistoryText = ""
 	stdReq.ToolsRaw = nil
-	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
+	stdReq.RefFileIDs = []string{fileID}
 	stdReq.FinalPrompt, _ = promptcompat.BuildOpenAIPrompt(newMessages, nil, "", stdReq.ToolChoice, stdReq.Thinking)
 
 	return stdReq, nil
