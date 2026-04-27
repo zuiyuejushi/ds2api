@@ -55,7 +55,7 @@ func (s Service) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptco
 	stdReq.Messages = promptMessages
 	stdReq.HistoryText = historyText
 	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
-	stdReq.FinalPrompt, stdReq.ToolNames = promptcompat.BuildOpenAIPrompt(promptMessages, stdReq.ToolsRaw, "", stdReq.ToolChoice, stdReq.Thinking)
+	stdReq.FinalPrompt, _ = promptcompat.BuildOpenAIPrompt(promptMessages, nil, "", promptcompat.ToolChoicePolicy{Mode: promptcompat.ToolChoiceNone}, stdReq.Thinking)
 	return stdReq, nil
 }
 

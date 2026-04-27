@@ -12,6 +12,7 @@ import (
 	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
+	"ds2api/internal/toolcall"
 )
 
 const (
@@ -103,22 +104,23 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		},
 	}
 
-	// Update the request — tools are in the file, but also injected into prompt as format instructions
+	// Update the request — tools (definitions + format instructions) are now fully in the file
 	stdReq.Messages = newMessages
 	stdReq.HistoryText = ""
 	stdReq.RefFileIDs = []string{fileID}
-	stdReq.FinalPrompt, stdReq.ToolNames = promptcompat.BuildOpenAIPrompt(newMessages, stdReq.ToolsRaw, "", stdReq.ToolChoice, stdReq.Thinking)
+	stdReq.FinalPrompt, _ = promptcompat.BuildOpenAIPrompt(newMessages, nil, "", promptcompat.ToolChoicePolicy{Mode: promptcompat.ToolChoiceNone}, stdReq.Thinking)
 
 	return stdReq, nil
 }
 
-// buildToolsContent serializes tool definitions into the file-ready format.
+// buildToolsContent serializes tool definitions and format instructions into file-ready content.
 func buildToolsContent(toolsRaw any) string {
 	tools, ok := toolsRaw.([]any)
 	if !ok || len(tools) == 0 {
 		return ""
 	}
 	var parts []string
+	names := make([]string, 0, len(tools))
 	for _, t := range tools {
 		tool, ok := t.(map[string]any)
 		if !ok {
@@ -135,6 +137,7 @@ func buildToolsContent(toolsRaw any) string {
 		if name == "" {
 			continue
 		}
+		names = append(names, name)
 		desc = strings.TrimSpace(desc)
 		if desc == "" {
 			desc = "No description"
@@ -142,7 +145,7 @@ func buildToolsContent(toolsRaw any) string {
 		paramsJSON, _ := json.Marshal(params)
 		parts = append(parts, fmt.Sprintf("Tool: %s\nDescription: %s\nParameters: %s", name, desc, string(paramsJSON)))
 	}
-	return fmt.Sprintf("[Tools]\n%s\n\n%s", strings.Join(parts, "\n\n"), strings.Repeat("=", 50))
+	return fmt.Sprintf("[Tools]\n%s\n\n%s\n\n%s", strings.Join(parts, "\n\n"), strings.Repeat("=", 50), toolcall.BuildToolCallInstructions(names))
 }
 
 // buildCombinedTranscript builds a single transcript with history, messages, and tools in order
