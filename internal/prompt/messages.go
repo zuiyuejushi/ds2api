@@ -105,7 +105,10 @@ func buildConversationContinuityInstructions(thinkingEnabled bool) string {
 		"Treat earlier messages as binding context; answer the user's current request as a continuation, not a restart.",
 	}
 	if thinkingEnabled {
-		lines = append(lines, "Keep reasoning internal. Do not leave the final user-facing answer only in reasoning; always provide the answer in visible assistant content.")
+		lines = append(lines,
+			"Adapt your reasoning depth to the request: use concise analysis for simple tasks and deeper reasoning for complex ones.",
+			"Keep reasoning internal. Do not leave the final user-facing answer only in reasoning; always provide the answer in visible assistant content.",
+		)
 	}
 	return strings.Join(lines, "\n")
 }

@@ -111,11 +111,14 @@ func TestBuildToolCallInstructions_WriteUsesFilePathAndContent(t *testing.T) {
 
 func TestBuildToolCallInstructions_AnchorsMissingOpeningWrapperFailureMode(t *testing.T) {
 	out := BuildToolCallInstructions([]string{"read_file"})
-	if !strings.Contains(out, "Never omit the opening <tool_calls> tag") {
-		t.Fatalf("expected explicit missing-opening-tag warning, got: %s", out)
+	if !strings.Contains(out, "[CORRECT EXAMPLES]") {
+		t.Fatalf("expected correct examples section, got: %s", out)
 	}
-	if !strings.Contains(out, "Wrong 3 — missing opening wrapper") {
-		t.Fatalf("expected missing-opening-wrapper negative example, got: %s", out)
+	if !strings.Contains(out, "RULES:") {
+		t.Fatalf("expected rules section, got: %s", out)
+	}
+	if !strings.Contains(out, "SELF-CHECK BEFORE OUTPUT:") {
+		t.Fatalf("expected self-check section, got: %s", out)
 	}
 }
 

@@ -206,7 +206,7 @@ func TestChatCompletionsHistorySplitUploadsHistoryFileAndKeepsLatestPrompt(t *te
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	// Expect 2 uploads: HISTORY.txt + INPUT.txt
+	// Expect 2 uploads: HISTORY.txt + CONTEXT.txt
 	if len(ds.uploadCalls) != 2 {
 		t.Fatalf("expected 2 upload calls (history + current input), got %d", len(ds.uploadCalls))
 	}
@@ -236,7 +236,7 @@ func TestChatCompletionsHistorySplitUploadsHistoryFileAndKeepsLatestPrompt(t *te
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
 	// After current input split, the prompt should contain the file reference instead of raw text
-	if !strings.Contains(promptText, "[file name]: INPUT.txt") {
+	if !strings.Contains(promptText, "[file name]: CONTEXT.txt") {
 		t.Fatalf("expected file reference in completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
@@ -277,7 +277,7 @@ func TestResponsesHistorySplitUploadsHistoryAndKeepsLatestPrompt(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	// Expect 2 uploads: HISTORY.txt + INPUT.txt
+	// Expect 2 uploads: HISTORY.txt + CONTEXT.txt
 	if len(ds.uploadCalls) != 2 {
 		t.Fatalf("expected 2 upload calls (history + current input), got %d", len(ds.uploadCalls))
 	}
@@ -286,7 +286,7 @@ func TestResponsesHistorySplitUploadsHistoryAndKeepsLatestPrompt(t *testing.T) {
 	}
 	promptText, _ := ds.completionReq["prompt"].(string)
 	// After current input split, the prompt should contain the file reference instead of raw text
-	if !strings.Contains(promptText, "[file name]: INPUT.txt") {
+	if !strings.Contains(promptText, "[file name]: CONTEXT.txt") {
 		t.Fatalf("expected file reference in completion prompt, got %s", promptText)
 	}
 	if strings.Contains(promptText, "first user turn") {
@@ -419,7 +419,7 @@ func TestHistorySplitWorksAcrossAutoDeleteModes(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 			}
-			// Expect 2 uploads: HISTORY.txt + INPUT.txt
+			// Expect 2 uploads: HISTORY.txt + CONTEXT.txt
 			if len(ds.uploadCalls) != 2 {
 				t.Fatalf("expected 2 uploads (history + current input) for mode=%s, got %d", mode, len(ds.uploadCalls))
 			}
@@ -428,7 +428,7 @@ func TestHistorySplitWorksAcrossAutoDeleteModes(t *testing.T) {
 			}
 			promptText, _ := ds.completionReq["prompt"].(string)
 			// After current input split, prompt should contain file reference, not raw "latest user turn"
-			if !strings.Contains(promptText, "[file name]: INPUT.txt") || strings.Contains(promptText, "first user turn") {
+			if !strings.Contains(promptText, "[file name]: CONTEXT.txt") || strings.Contains(promptText, "first user turn") {
 				t.Fatalf("unexpected prompt for mode=%s: %s", mode, promptText)
 			}
 		})

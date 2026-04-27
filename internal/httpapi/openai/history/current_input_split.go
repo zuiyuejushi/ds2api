@@ -2,6 +2,7 @@ package history
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -59,15 +60,18 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		return stdReq, nil
 	}
 
-	// Get history text if available (keep full content for the file)
+	// Get history text if available
 	historyText := strings.TrimSpace(stdReq.HistoryText)
 
-	// Build current turn content from messages (keep full content for the file)
+	// Build content from all messages — including system, user, assistant, tool
 	currentContent := buildCurrentTurnContent(stdReq.Messages)
 
-	// Combine history + current input into one file
-	// History first, current input last (for priority)
-	combinedContent := buildCombinedTranscript(historyText, currentContent)
+	// Serialize tools into the file body so they don't leak into the prompt
+	toolsContent := buildToolsContent(stdReq.ToolsRaw)
+
+	// Combine history + current input + tools into one file
+	// History first, current input middle, tools last (closest to user question)
+	combinedContent := buildCombinedTranscript(historyText, currentContent, toolsContent)
 	if strings.TrimSpace(combinedContent) == "" {
 		return stdReq, nil
 	}
@@ -88,47 +92,62 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 		return stdReq, errors.New("upload context file returned empty file id")
 	}
 
-	// Find the last user message index to replace
-	_, lastUserIndex := extractLastUserMessage(stdReq.Messages)
-	if lastUserIndex < 0 {
-		return stdReq, nil
-	}
-
-	// Build replacement message with file reference
+	// Replace ALL messages with just the file reference.
+	// Only system's own prompts (conversation continuity / reasoning instructions) reach the LLM inline.
+	// Everything else — history, user input, assistant replies, tool definitions — is in the uploaded file.
 	replacementContent := buildContextPrompt()
-
-	replacementMsg := map[string]any{
-		"role":    "user",
-		"content": replacementContent,
+	newMessages := []any{
+		map[string]any{
+			"role":    "user",
+			"content": replacementContent,
+		},
 	}
 
-	// Create new messages slice, filtering out ALL system messages and replacing last user message
-	// All system prompts (including Coding Agent) should be in the file, not in FinalPrompt
-	newMessages := make([]any, 0, len(stdReq.Messages))
-	for i, msg := range stdReq.Messages {
-		if i == lastUserIndex {
-			// Replace the last user message with file reference
-			newMessages = append(newMessages, replacementMsg)
-			continue
-		}
-		// Filter out ALL system messages - they should be in the file, not in FinalPrompt
-		if isSystemMessage(msg) {
-			continue
-		}
-		newMessages = append(newMessages, msg)
-	}
-
-	// Update the request - clear history text since it's now in the file
+	// Update the request — clear history, tools, and raw messages
 	stdReq.Messages = newMessages
 	stdReq.HistoryText = ""
-	stdReq.RefFileIDs = []string{fileID}
-	stdReq.FinalPrompt, stdReq.ToolNames = promptcompat.BuildOpenAIPrompt(newMessages, stdReq.ToolsRaw, "", stdReq.ToolChoice, stdReq.Thinking)
+	stdReq.ToolsRaw = nil
+	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
+	stdReq.FinalPrompt, _ = promptcompat.BuildOpenAIPrompt(newMessages, nil, "", stdReq.ToolChoice, stdReq.Thinking)
 
 	return stdReq, nil
 }
 
-// buildCombinedTranscript builds a single transcript with history first, current input last
-func buildCombinedTranscript(historyText, currentContent string) string {
+// buildToolsContent serializes tool definitions into the file-ready format.
+func buildToolsContent(toolsRaw any) string {
+	tools, ok := toolsRaw.([]any)
+	if !ok || len(tools) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, t := range tools {
+		tool, ok := t.(map[string]any)
+		if !ok {
+			continue
+		}
+		fn, _ := tool["function"].(map[string]any)
+		if len(fn) == 0 {
+			fn = tool
+		}
+		name, _ := fn["name"].(string)
+		desc, _ := fn["description"].(string)
+		params, _ := fn["parameters"].(map[string]any)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		desc = strings.TrimSpace(desc)
+		if desc == "" {
+			desc = "No description"
+		}
+		paramsJSON, _ := json.Marshal(params)
+		parts = append(parts, fmt.Sprintf("Tool: %s\nDescription: %s\nParameters: %s", name, desc, string(paramsJSON)))
+	}
+	return fmt.Sprintf("[Tools]\n%s\n\n%s", strings.Join(parts, "\n\n"), strings.Repeat("=", 50))
+}
+
+// buildCombinedTranscript builds a single transcript with history, messages, and tools in order
+func buildCombinedTranscript(historyText, currentContent, toolsContent string) string {
 	var sb strings.Builder
 
 	// History section (if exists) - placed first (lower priority)
@@ -137,9 +156,15 @@ func buildCombinedTranscript(historyText, currentContent string) string {
 		sb.WriteString("\n\n")
 	}
 
-	// Current input section - placed last (highest priority, closest to user)
+	// Current input section - middle priority
 	if currentContent != "" {
 		sb.WriteString(currentContent)
+	}
+
+	// Tools section - placed last (closest to user question, highest priority)
+	if toolsContent != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(toolsContent)
 	}
 
 	return sb.String()
@@ -154,16 +179,14 @@ func buildContextPrompt() string {
 	return sb.String()
 }
 
-// buildCurrentTurnContent builds content from all current turn messages (excluding system messages)
+// buildCurrentTurnContent builds content from all current turn messages.
+// All caller-provided content (including system messages) goes into the file
+// so only the file reference + system-injected prompts reach the underlying LLM.
 func buildCurrentTurnContent(messages []any) string {
 	var parts []string
 	for _, msg := range messages {
 		m, ok := msg.(map[string]any)
 		if !ok {
-			continue
-		}
-		// Skip system messages - they should not be in the file content
-		if isSystemMessage(msg) {
 			continue
 		}
 		content := extractMessageContent(m)
@@ -180,36 +203,6 @@ func stripInternalSystemPrompts(content string) string {
 		content = strings.ReplaceAll(content, pattern, "")
 	}
 	return strings.TrimSpace(content)
-}
-
-// isInternalSystemMessage checks if a message is a system message containing internal prompts
-func isInternalSystemMessage(msg any) bool {
-	m, ok := msg.(map[string]any)
-	if !ok {
-		return false
-	}
-	role := strings.ToLower(strings.TrimSpace(shared.AsString(m["role"])))
-	if role != "system" {
-		return false
-	}
-	content := extractMessageContent(m)
-	// Check if content contains any internal system prompt patterns
-	for _, pattern := range internalSystemPromptPatterns {
-		if strings.Contains(content, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-// isSystemMessage checks if a message is any system message (including Coding Agent prompts)
-func isSystemMessage(msg any) bool {
-	m, ok := msg.(map[string]any)
-	if !ok {
-		return false
-	}
-	role := strings.ToLower(strings.TrimSpace(shared.AsString(m["role"])))
-	return role == "system" || role == "developer"
 }
 
 // stripInternalMarkers removes internal prompt markers
