@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"html"
 	"strings"
@@ -107,10 +108,27 @@ func parseXMLNodeValue(dec *xml.Decoder, start xml.StartElement) (any, error) {
 				return nil, errXMLMismatch(start.Name.Local, t.Name.Local)
 			}
 			if len(children) == 0 {
+				if parsed, ok := parseJSONLiteralValue(text.String()); ok {
+					return parsed, nil
+				}
 				return text.String(), nil
 			}
 			if txt := text.String(); strings.TrimSpace(txt) != "" {
-				children["_text"] = txt
+				if parsed, ok := parseJSONLiteralValue(txt); ok {
+					children["_text"] = parsed
+				} else {
+					children["_text"] = txt
+				}
+			}
+			if len(children) == 1 {
+				if items, ok := children["item"]; ok {
+					switch v := items.(type) {
+					case []any:
+						return v, nil
+					default:
+						return []any{v}, nil
+					}
+				}
 			}
 			return children, nil
 		}
@@ -155,4 +173,25 @@ func (e xmlMismatchError) Error() string {
 
 func errXMLMismatch(want, got string) error {
 	return xmlMismatchError{want: want, got: got}
+}
+
+// parseJSONLiteralValue attempts to parse a string as a JSON literal
+// (boolean, number, null). On success, it returns the typed Go value.
+// On failure, it returns the original string unchanged with ok=false.
+func parseJSONLiteralValue(s string) (any, bool) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return s, false
+	}
+
+	// Try json.Unmarshal — this handles true, false, null, and numbers.
+	var v any
+	if err := json.Unmarshal([]byte(trimmed), &v); err == nil {
+		// Only accept JSON literals, not objects or arrays.
+		switch v.(type) {
+		case bool, float64, nil:
+			return v, true
+		}
+	}
+	return s, false
 }
