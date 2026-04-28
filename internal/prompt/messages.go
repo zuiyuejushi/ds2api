@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
 )
 
 var markdownImagePattern = regexp.MustCompile(`!\[(.*?)\]\((.*?)\)`)
@@ -54,9 +52,7 @@ func MessagesPrepareWithThinking(messages []map[string]any, thinkingEnabled bool
 		merged = append(merged, msg)
 	}
 	parts := make([]string, 0, len(merged)+2)
-	// Add timestamp with millisecond precision before beginSentenceMarker
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	parts = append(parts, timestamp+beginSentenceMarker)
+	parts = append(parts, beginSentenceMarker)
 	lastRole := ""
 	for _, m := range merged {
 		lastRole = m.Role
@@ -73,8 +69,7 @@ func MessagesPrepareWithThinking(messages []map[string]any, thinkingEnabled bool
 			}
 		case "user":
 		// Append timestamp at the end of user message
-		userTimestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-		parts = append(parts, formatRoleBlock(userMarker, m.Text+userTimestamp, ""))
+		parts = append(parts, formatRoleBlock(userMarker, m.Text, ""))
 		default:
 			if strings.TrimSpace(m.Text) != "" {
 				parts = append(parts, m.Text)
