@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -39,6 +40,19 @@ func LoadStoreWithError() (*Store, error) {
 	}
 	store.rebuildIndexes()
 	return store, nil
+}
+
+func LoadStoreFromBytes(data []byte) (*Store, error) {
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("load store from bytes: %w", err)
+	}
+	cfg.NormalizeCredentials()
+	s := &Store{
+		cfg: cfg,
+	}
+	s.rebuildIndexes()
+	return s, nil
 }
 
 func loadStore() (*Store, error) {

@@ -6,6 +6,14 @@ import (
 	"ds2api/internal/config"
 )
 
+func (p *Pool) AcquireWaitPool(ctx context.Context, target string, exclude map[string]bool) (*PoolAccount, error) {
+	acc, ok := p.AcquireWait(ctx, target, exclude)
+	if !ok {
+		return nil, ErrNoAccountAvailable
+	}
+	return &PoolAccount{ID: acc.Identifier(), Token: acc.Token}, nil
+}
+
 func (p *Pool) Acquire(target string, exclude map[string]bool) (config.Account, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

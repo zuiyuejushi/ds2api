@@ -87,7 +87,7 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 	input := map[string]any{}
 	for _, paramMatch := range findXMLElementBlocks(inner, "parameter") {
 		paramAttrs := parseXMLTagAttributes(paramMatch.Attrs)
-		paramName := strings.TrimSpace(html.UnescapeString(paramAttrs["name"]))
+		paramName := strings.TrimSpace(html.UnescapeString(decodeUnicodeEscapes(paramAttrs["name"])))
 		if paramName == "" {
 			continue
 		}
@@ -294,15 +294,31 @@ func parseInvokeParameterValue(raw string) any {
 		return ""
 	}
 	if value, ok := extractStandaloneCDATA(trimmed); ok {
-		return value
+		// Try to parse CDATA content as JSON literal (bool, number, null)
+		// This handles cases like <![CDATA[true]]> or <![CDATA[42]]>
+		if parsed, ok := parseJSONLiteralValue(value); ok {
+			return parsed
+		}
+		return decodeUnicodeEscapes(value)
 	}
 	if parsed := parseStructuredToolCallInput(trimmed); len(parsed) > 0 {
 		if len(parsed) == 1 {
 			if rawValue, ok := parsed["_raw"].(string); ok {
-				return rawValue
+				// Try to parse raw value as JSON literal for explicit boolean strings
+				if parsed, ok := parseJSONLiteralValue(rawValue); ok {
+					return parsed
+				}
+				return decodeUnicodeEscapes(rawValue)
 			}
 		}
 		return parsed
 	}
-	return html.UnescapeString(extractRawTagValue(trimmed))
+	value := extractRawTagValue(trimmed)
+	// Try to parse as JSON literal for explicit boolean strings
+	if parsed, ok := parseJSONLiteralValue(value); ok {
+		return parsed
+	}
+	return value
 }
+
+

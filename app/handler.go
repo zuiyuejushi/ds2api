@@ -8,7 +8,7 @@ import (
 )
 
 func NewHandler() http.Handler {
-	app, err := server.NewApp()
+	app, err := server.NewAppWithMode("server")
 	if err != nil {
 		config.Logger.Error("[app] init failed", "error", err)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

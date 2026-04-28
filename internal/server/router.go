@@ -18,6 +18,7 @@ import (
 	"ds2api/internal/auth"
 	"ds2api/internal/chathistory"
 	"ds2api/internal/config"
+	"ds2api/internal/poolserver"
 	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/admin"
 	"ds2api/internal/httpapi/claude"
@@ -38,12 +39,13 @@ type App struct {
 	Router   http.Handler
 }
 
-func NewApp() (*App, error) {
+func NewAppWithMode(mode string) (*App, error) {
 	store, err := config.LoadStoreWithError()
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	pool := account.NewPool(store)
+	config.Logger.Info("pool_mode", "mode", mode)
 	var dsClient *dsclient.Client
 	resolver := auth.NewResolver(store, pool, func(ctx context.Context, acc config.Account) (string, error) {
 		return dsClient.Login(ctx, acc)
@@ -104,6 +106,14 @@ func NewApp() (*App, error) {
 		admin.RegisterRoutes(ar, adminHandler)
 	})
 	webui.RegisterRoutes(r, webuiHandler)
+	if mode == "server" {
+		poolSrv := poolserver.New(pool, store)
+		poolMux := http.NewServeMux()
+		poolSrv.RegisterRoutes(poolMux)
+		r.Route("/api", func(api chi.Router) {
+			api.Mount("/pool", poolMux)
+		})
+	}
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		if strings.HasPrefix(req.URL.Path, "/admin/") && webuiHandler.HandleAdminFallback(w, req) {
 			return

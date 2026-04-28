@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,7 +25,14 @@ func main() {
 	config.RefreshLogger()
 	webui.EnsureBuiltOnStartup()
 	_ = auth.AdminKey()
-	app, err := server.NewApp()
+	modePtr := flag.String("mode", "server", "run mode: server or client")
+	flag.Parse()
+	mode := strings.ToLower(strings.TrimSpace(*modePtr))
+	if poolURL := strings.TrimSpace(os.Getenv("DS2API_POOL_SERVER_URL")); poolURL != "" {
+		mode = "client"
+	}
+	config.Logger.Info("starting ds2api", "mode", mode)
+	app, err := server.NewAppWithMode(mode)
 	if err != nil {
 		config.Logger.Error("server initialization failed", "error", err)
 		os.Exit(1)

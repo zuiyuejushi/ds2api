@@ -1,7 +1,6 @@
 package toolcall
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"html"
 	"strings"
@@ -50,7 +49,7 @@ func parseStructuredToolCallInput(raw string) map[string]any {
 		return parsed
 	}
 
-	return map[string]any{"_raw": html.UnescapeString(trimmed)}
+	return map[string]any{"_raw": decodeUnicodeEscapes(html.UnescapeString(trimmed))}
 }
 
 func parseXMLFragmentValue(raw string) (any, bool) {
@@ -176,22 +175,24 @@ func errXMLMismatch(want, got string) error {
 }
 
 // parseJSONLiteralValue attempts to parse a string as a JSON literal
-// (boolean, number, null). On success, it returns the typed Go value.
+// (boolean, null). On success, it returns the typed Go value.
 // On failure, it returns the original string unchanged with ok=false.
+// Note: Numbers are intentionally NOT parsed to preserve string values like "1"
 func parseJSONLiteralValue(s string) (any, bool) {
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" {
 		return s, false
 	}
 
-	// Try json.Unmarshal — this handles true, false, null, and numbers.
-	var v any
-	if err := json.Unmarshal([]byte(trimmed), &v); err == nil {
-		// Only accept JSON literals, not objects or arrays.
-		switch v.(type) {
-		case bool, float64, nil:
-			return v, true
-		}
+	// Only parse explicit boolean and null literals, not numbers
+	// Case-insensitive matching for booleans
+	switch strings.ToLower(trimmed) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	case "null":
+		return nil, true
 	}
 	return s, false
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -11,6 +12,34 @@ var toolCallMarkupKVPattern = regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?([a-z0
 
 // cdataPattern matches a standalone CDATA section.
 var cdataPattern = regexp.MustCompile(`(?is)^<!\[CDATA\[(.*?)]]>$`)
+
+// unicodeEscapePattern matches JSON-style Unicode escape sequences like \uXXXX or \u{XXXXXX}
+var unicodeEscapePattern = regexp.MustCompile(`\\u([0-9a-fA-F]{4})|\\u\{([0-9a-fA-F]+)\}`)
+
+// decodeUnicodeEscapes decodes JSON-style \uXXXX and \u{XXXXXX} Unicode escape sequences.
+// This handles cases where models output Unicode escapes in XML parameters that won't be
+// automatically decoded by standard HTML/XML unescaping.
+func decodeUnicodeEscapes(s string) string {
+	return unicodeEscapePattern.ReplaceAllStringFunc(s, func(match string) string {
+		submatches := unicodeEscapePattern.FindStringSubmatch(match)
+		if len(submatches) < 2 {
+			return match
+		}
+		// Check which group matched (\uXXXX or \u{XXXXXX})
+		hexStr := submatches[1]
+		if hexStr == "" && len(submatches) > 2 {
+			hexStr = submatches[2]
+		}
+		if hexStr == "" {
+			return match
+		}
+		codePoint, err := strconv.ParseInt(hexStr, 16, 32)
+		if err != nil {
+			return match
+		}
+		return string(rune(codePoint))
+	})
+}
 
 func parseMarkupKVObject(text string) map[string]any {
 	matches := toolCallMarkupKVPattern.FindAllStringSubmatch(strings.TrimSpace(text), -1)
@@ -93,7 +122,7 @@ func extractRawTagValue(inner string) string {
 
 	// 1. Check for CDATA - if present, it's the ultimate "safe" container.
 	if value, ok := extractStandaloneCDATA(trimmed); ok {
-		return value // Return raw content between CDATA brackets
+		return decodeUnicodeEscapes(value) // Return raw content between CDATA brackets
 	}
 
 	// 2. If no CDATA, we still want to be robust.
@@ -103,7 +132,7 @@ func extractRawTagValue(inner string) string {
 
 	// If it contains what looks like a single tag and no other text, it might be nested XML
 	// but for KV objects we usually want the value.
-	return html.UnescapeString(inner)
+	return decodeUnicodeEscapes(html.UnescapeString(inner))
 }
 
 func extractStandaloneCDATA(inner string) (string, bool) {

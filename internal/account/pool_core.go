@@ -1,11 +1,14 @@
 package account
 
 import (
+	"errors"
 	"sort"
 	"sync"
 
 	"ds2api/internal/config"
 )
+
+var ErrNoAccountAvailable = errors.New("no account available")
 
 type Pool struct {
 	store                  *config.Store
@@ -80,23 +83,34 @@ func (p *Pool) Reset() {
 	)
 }
 
-func (p *Pool) Release(accountID string) {
+func (p *Pool) Release(accountID string) error {
 	if accountID == "" {
-		return
+		return nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	count := p.inUse[accountID]
 	if count <= 0 {
-		return
+		return nil
 	}
 	if count == 1 {
 		delete(p.inUse, accountID)
 		p.notifyWaiterLocked()
-		return
+		return nil
 	}
 	p.inUse[accountID] = count - 1
 	p.notifyWaiterLocked()
+	return nil
+}
+
+func (p *Pool) Stats() PoolStats {
+	s := p.Status()
+	return PoolStats{
+		Total:     s["total"].(int),
+		InUse:     s["in_use"].(int),
+		Available: s["available"].(int),
+		QueueLen:  s["waiting"].(int),
+	}
 }
 
 func (p *Pool) Status() map[string]any {
