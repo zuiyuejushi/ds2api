@@ -91,7 +91,9 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 		if paramName == "" {
 			continue
 		}
-		value := parseInvokeParameterValue(paramMatch.Body)
+		// For parameter values, preserve nested XML structure as string
+		// instead of parsing it into a flat map
+		value := parseParameterValuePreserveXML(paramMatch.Body)
 		appendMarkupValue(input, paramName, value)
 	}
 
@@ -315,6 +317,62 @@ func parseInvokeParameterValue(raw string) any {
 	}
 	value := extractRawTagValue(trimmed)
 	// Try to parse as JSON literal for explicit boolean strings
+	if parsed, ok := parseJSONLiteralValue(value); ok {
+		return parsed
+	}
+	return value
+}
+
+// parseParameterValuePreserveXML parses parameter values while preserving nested XML structure.
+// Unlike parseInvokeParameterValue, this function keeps nested XML as string instead of
+// flattening it into a map structure.
+func parseParameterValuePreserveXML(raw string) any {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	// Handle CDATA - extract and process content
+	if value, ok := extractStandaloneCDATA(trimmed); ok {
+		if parsed, ok := parseJSONLiteralValue(value); ok {
+			return parsed
+		}
+		return decodeUnicodeEscapes(value)
+	}
+
+	// If content looks like XML (starts with <), preserve it as string
+	// but apply Unicode decoding and HTML unescaping
+	if strings.HasPrefix(trimmed, "<") {
+		// Check if it's a simple value or complex nested XML
+		hasNestedTags := false
+		for _, tag := range []string{"<item>", "<options>", "<header>", "<label>", "<description>"} {
+			if strings.Contains(strings.ToLower(trimmed), tag) {
+				hasNestedTags = true
+				break
+			}
+		}
+
+		if hasNestedTags {
+			// Preserve the XML structure as string
+			return decodeUnicodeEscapes(html.UnescapeString(trimmed))
+		}
+
+		// For simple XML without known nested structures, try parsing
+		if parsed := parseStructuredToolCallInput(trimmed); len(parsed) > 0 {
+			if len(parsed) == 1 {
+				if rawValue, ok := parsed["_raw"].(string); ok {
+					if parsed, ok := parseJSONLiteralValue(rawValue); ok {
+						return parsed
+					}
+					return decodeUnicodeEscapes(rawValue)
+				}
+			}
+			return parsed
+		}
+	}
+
+	// For non-XML content, use standard processing
+	value := extractRawTagValue(trimmed)
 	if parsed, ok := parseJSONLiteralValue(value); ok {
 		return parsed
 	}

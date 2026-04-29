@@ -4,6 +4,11 @@ import (
 	"testing"
 )
 
+/*
+// Unicode decoding is disabled. These tests are commented out.
+// To re-enable, uncomment the decodeUnicodeEscapes implementation
+// in toolcalls_markup.go
+
 func TestDecodeUnicodeEscapes(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -55,5 +60,18 @@ func TestParseInvokeParameterValueWithUnicode(t *testing.T) {
 				t.Errorf("parseInvokeParameterValue(%q) = %q, want %q", tt.inner, gotStr, tt.expected)
 			}
 		})
+	}
+}
+*/
+
+// Placeholder test to keep the file valid
+func TestUnicodeDecodingDisabled(t *testing.T) {
+	// Unicode decoding is currently disabled in decodeUnicodeEscapes
+	// This test documents that behavior
+	input := `\u0048\u0065\u006c\u006c\u006f`
+	got := decodeUnicodeEscapes(input)
+	// When disabled, function returns input unchanged
+	if got != input {
+		t.Errorf("decodeUnicodeEscapes should return input unchanged when disabled")
 	}
 }

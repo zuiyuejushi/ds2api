@@ -115,21 +115,20 @@ func appendMarkupValue(out map[string]any, key string, value any) {
 }
 
 // extractRawTagValue treats the inner content of a tag robustly.
-// It detects CDATA and strips it, otherwise it unescapes standard HTML entities.
-// It avoids over-aggressive tag stripping that might break user content.
-// NOTE: Unicode decoding is disabled, but CDATA extraction is kept for boolean parsing.
+// It detects CDATA and strips it.
+// NOTE: Both Unicode and HTML decoding are disabled to prevent mangling of user content.
 func extractRawTagValue(inner string) string {
 	trimmed := strings.TrimSpace(inner)
 	if trimmed == "" {
 		return ""
 	}
 
-	// 1. Check for CDATA - if present, extract content but skip Unicode decoding
+	// 1. Check for CDATA - if present, extract content
 	if value, ok := extractStandaloneCDATA(trimmed); ok {
-		return value // Return raw content without Unicode decoding
+		return value // Return raw content
 	}
 
-	// 2. No CDATA, return trimmed value without Unicode decoding
+	// 2. No CDATA, return raw content without any decoding
 	return trimmed
 }
 

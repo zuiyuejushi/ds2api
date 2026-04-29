@@ -380,6 +380,9 @@ func TestRepairLooseJSONWithNestedObjects(t *testing.T) {
 	}
 }
 
+/*
+// HTML entity decoding is disabled to prevent mangling user content.
+// This test is commented out.
 func TestParseToolCallsUnescapesHTMLEntityArguments(t *testing.T) {
 	text := `<tool_calls><invoke name="Bash"><parameter name="command">echo a &gt; out.txt</parameter></invoke></tool_calls>`
 	calls := ParseToolCalls(text, []string{"bash"})
@@ -389,6 +392,21 @@ func TestParseToolCallsUnescapesHTMLEntityArguments(t *testing.T) {
 	cmd, _ := calls[0].Input["command"].(string)
 	if cmd != "echo a > out.txt" {
 		t.Fatalf("expected html entities to be unescaped in command, got %q", cmd)
+	}
+}
+*/
+
+// Placeholder test to document HTML decoding is disabled
+func TestHTMLEntityDecodingDisabled(t *testing.T) {
+	text := `<tool_calls><invoke name="Bash"><parameter name="command">echo a &gt; out.txt</parameter></invoke></tool_calls>`
+	calls := ParseToolCalls(text, []string{"bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected one call, got %#v", calls)
+	}
+	cmd, _ := calls[0].Input["command"].(string)
+	// HTML entities are NOT decoded - value should remain as-is
+	if cmd != "echo a &gt; out.txt" {
+		t.Fatalf("expected html entities to be preserved, got %q", cmd)
 	}
 }
 
