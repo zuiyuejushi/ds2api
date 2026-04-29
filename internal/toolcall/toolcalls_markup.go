@@ -2,9 +2,7 @@ package toolcall
 
 import (
 	"encoding/json"
-	"html"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -19,7 +17,11 @@ var unicodeEscapePattern = regexp.MustCompile(`\\u([0-9a-fA-F]{4})|\\u\{([0-9a-f
 // decodeUnicodeEscapes decodes JSON-style \uXXXX and \u{XXXXXX} Unicode escape sequences.
 // This handles cases where models output Unicode escapes in XML parameters that won't be
 // automatically decoded by standard HTML/XML unescaping.
+// DISABLED: Unicode decoding is disabled.
 func decodeUnicodeEscapes(s string) string {
+	// DISABLED: Return original string without decoding
+	return s
+	/*
 	return unicodeEscapePattern.ReplaceAllStringFunc(s, func(match string) string {
 		submatches := unicodeEscapePattern.FindStringSubmatch(match)
 		if len(submatches) < 2 {
@@ -39,6 +41,7 @@ func decodeUnicodeEscapes(s string) string {
 		}
 		return string(rune(codePoint))
 	})
+	*/
 }
 
 func parseMarkupKVObject(text string) map[string]any {
@@ -114,27 +117,23 @@ func appendMarkupValue(out map[string]any, key string, value any) {
 // extractRawTagValue treats the inner content of a tag robustly.
 // It detects CDATA and strips it, otherwise it unescapes standard HTML entities.
 // It avoids over-aggressive tag stripping that might break user content.
+// NOTE: Unicode decoding is disabled, but CDATA extraction is kept for boolean parsing.
 func extractRawTagValue(inner string) string {
 	trimmed := strings.TrimSpace(inner)
 	if trimmed == "" {
 		return ""
 	}
 
-	// 1. Check for CDATA - if present, it's the ultimate "safe" container.
+	// 1. Check for CDATA - if present, extract content but skip Unicode decoding
 	if value, ok := extractStandaloneCDATA(trimmed); ok {
-		return decodeUnicodeEscapes(value) // Return raw content between CDATA brackets
+		return value // Return raw content without Unicode decoding
 	}
 
-	// 2. If no CDATA, we still want to be robust.
-	// We unescape standard HTML entities (like &lt; &gt; &amp;)
-	// but we DON'T recursively strip tags unless they are actually valid XML tags
-	// at the start/end (which should have been handled by the outer matcher anyway).
-
-	// If it contains what looks like a single tag and no other text, it might be nested XML
-	// but for KV objects we usually want the value.
-	return decodeUnicodeEscapes(html.UnescapeString(inner))
+	// 2. No CDATA, return trimmed value without Unicode decoding
+	return trimmed
 }
 
+// extractStandaloneCDATA extracts content from CDATA section.
 func extractStandaloneCDATA(inner string) (string, bool) {
 	trimmed := strings.TrimSpace(inner)
 	if cdataMatches := cdataPattern.FindStringSubmatch(trimmed); len(cdataMatches) >= 2 {
