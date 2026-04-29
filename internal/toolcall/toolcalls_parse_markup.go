@@ -332,6 +332,7 @@ func parseParameterValuePreserveXML(raw string) any {
 	}
 
 	// Handle CDATA - extract and process content
+	// CDATA content parses JSON literals including numbers
 	if value, ok := extractStandaloneCDATA(trimmed); ok {
 		if parsed, ok := parseJSONLiteralValue(value); ok {
 			return parsed

@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"html"
 	"strings"
@@ -184,7 +185,7 @@ func parseJSONLiteralValue(s string) (any, bool) {
 		return s, false
 	}
 
-	// Only parse explicit boolean and null literals, not numbers
+	// Parse explicit boolean and null literals
 	// Case-insensitive matching for booleans
 	switch strings.ToLower(trimmed) {
 	case "true":
@@ -194,5 +195,12 @@ func parseJSONLiteralValue(s string) (any, bool) {
 	case "null":
 		return nil, true
 	}
+
+	// Try to parse as JSON number
+	var num float64
+	if err := json.Unmarshal([]byte(trimmed), &num); err == nil {
+		return num, true
+	}
+
 	return s, false
 }
