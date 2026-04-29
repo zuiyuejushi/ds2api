@@ -86,17 +86,18 @@ func TestParameterBoundaryDetection(t *testing.T) {
 </html></parameter>
   </invoke>
 </tool_calls>`,
-			// 注意: DOCTYPE 声明的内容不会被解析为嵌套结构，保持为字符串
+			// 注意: HTML/XML 内容会被解析为嵌套结构
 			expected: map[string]any{
-				"content": `<!DOCTYPE html>
-<html>
-<body>
-  <p>Hello</p>
-</body>
-</html>`,
+				"content": map[string]any{
+					"html": map[string]any{
+						"body": map[string]any{
+							"p": "Hello",
+						},
+					},
+				},
 			},
 			expectType: map[string]string{
-				"content": "string",
+				"content": "map",
 			},
 		},
 		{
