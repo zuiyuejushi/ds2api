@@ -323,9 +323,8 @@ func parseInvokeParameterValue(raw string) any {
 	return value
 }
 
-// parseParameterValuePreserveXML parses parameter values while preserving nested XML structure.
-// Unlike parseInvokeParameterValue, this function keeps nested XML as string instead of
-// flattening it into a map structure.
+// parseParameterValuePreserveXML parses parameter values into structured data (map or array).
+// It converts nested XML into JSON-like structure, with repeated tags becoming arrays.
 func parseParameterValuePreserveXML(raw string) any {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -337,38 +336,12 @@ func parseParameterValuePreserveXML(raw string) any {
 		if parsed, ok := parseJSONLiteralValue(value); ok {
 			return parsed
 		}
-		return decodeUnicodeEscapes(value)
+		return value
 	}
 
-	// If content looks like XML (starts with <), preserve it as string
-	// but apply Unicode decoding and HTML unescaping
+	// If content looks like XML, parse it into structured data
 	if strings.HasPrefix(trimmed, "<") {
-		// Check if it's a simple value or complex nested XML
-		hasNestedTags := false
-		for _, tag := range []string{"<item>", "<options>", "<header>", "<label>", "<description>"} {
-			if strings.Contains(strings.ToLower(trimmed), tag) {
-				hasNestedTags = true
-				break
-			}
-		}
-
-		if hasNestedTags {
-			// Preserve the XML structure as string
-			return decodeUnicodeEscapes(html.UnescapeString(trimmed))
-		}
-
-		// For simple XML without known nested structures, try parsing
-		if parsed := parseStructuredToolCallInput(trimmed); len(parsed) > 0 {
-			if len(parsed) == 1 {
-				if rawValue, ok := parsed["_raw"].(string); ok {
-					if parsed, ok := parseJSONLiteralValue(rawValue); ok {
-						return parsed
-					}
-					return decodeUnicodeEscapes(rawValue)
-				}
-			}
-			return parsed
-		}
+		return parseXMLToStructure(trimmed)
 	}
 
 	// For non-XML content, use standard processing
@@ -377,6 +350,181 @@ func parseParameterValuePreserveXML(raw string) any {
 		return parsed
 	}
 	return value
+}
+
+// parseXMLToStructure converts XML content into a structured map or array.
+// Repeated tags with the same name are converted to arrays.
+func parseXMLToStructure(xmlContent string) any {
+	trimmed := strings.TrimSpace(xmlContent)
+	if trimmed == "" {
+		return ""
+	}
+
+	// Check if this is a single tag or multiple tags at root level
+	topLevelTags := findTopLevelTags(trimmed)
+	if len(topLevelTags) == 0 {
+		return trimmed
+	}
+
+	// If single tag, parse it as an object
+	if len(topLevelTags) == 1 {
+		return parseXMLNode(trimmed)
+	}
+
+	// Multiple top-level tags with same name -> array
+	firstTagName := getTagName(topLevelTags[0])
+	allSameName := true
+	for _, tag := range topLevelTags {
+		if getTagName(tag) != firstTagName {
+			allSameName = false
+			break
+		}
+	}
+
+	if allSameName {
+		result := make([]any, 0, len(topLevelTags))
+		for _, tag := range topLevelTags {
+			result = append(result, parseXMLNode(tag))
+		}
+		return result
+	}
+
+	// Mixed tags -> map
+	result := make(map[string]any)
+	for _, tag := range topLevelTags {
+		node := parseXMLNode(tag)
+		if nodeMap, ok := node.(map[string]any); ok {
+			for k, v := range nodeMap {
+				appendXMLValue(result, k, v)
+			}
+		}
+	}
+	return result
+}
+
+// findTopLevelTags extracts top-level XML tags from content
+func findTopLevelTags(content string) []string {
+	var tags []string
+	pos := 0
+	contentLen := len(content)
+
+	for pos < contentLen {
+		// Skip whitespace
+		for pos < contentLen && (content[pos] == ' ' || content[pos] == '\t' || content[pos] == '\n' || content[pos] == '\r') {
+			pos++
+		}
+		if pos >= contentLen {
+			break
+		}
+
+		// Check if this is a tag start
+		if content[pos] != '<' || pos+1 >= contentLen || content[pos+1] == '/' || content[pos+1] == '!' {
+			// Not a start tag, skip to next
+			pos++
+			continue
+		}
+
+		// Find tag name
+		tagStart := pos
+		tagEnd := pos + 1
+		for tagEnd < contentLen && content[tagEnd] != ' ' && content[tagEnd] != '>' && content[tagEnd] != '/' {
+			tagEnd++
+		}
+		tagName := content[tagStart+1 : tagEnd]
+
+		// Find matching end tag
+		endTag := "</" + tagName + ">"
+		endPos := strings.Index(content[tagEnd:], endTag)
+		if endPos < 0 {
+			pos++
+			continue
+		}
+		endPos += tagEnd + len(endTag)
+
+		// Extract the complete tag
+		tags = append(tags, content[tagStart:endPos])
+		pos = endPos
+	}
+
+	return tags
+}
+
+// getTagName extracts tag name from a complete tag string
+func getTagName(tag string) string {
+	tag = strings.TrimSpace(tag)
+	if len(tag) < 2 || tag[0] != '<' {
+		return ""
+	}
+	end := 1
+	for end < len(tag) && tag[end] != ' ' && tag[end] != '>' && tag[end] != '/' {
+		end++
+	}
+	return strings.ToLower(tag[1:end])
+}
+
+// parseXMLNode parses a single XML node into a map
+func parseXMLNode(node string) any {
+	node = strings.TrimSpace(node)
+	if node == "" {
+		return ""
+	}
+
+	// Extract tag name and body
+	if len(node) < 2 || node[0] != '<' {
+		return node
+	}
+
+	// Find tag end
+	tagEnd := 1
+	for tagEnd < len(node) && node[tagEnd] != ' ' && node[tagEnd] != '>' {
+		tagEnd++
+	}
+	tagName := strings.ToLower(node[1:tagEnd])
+
+	// Find body start
+	bodyStart := tagEnd
+	for bodyStart < len(node) && node[bodyStart] != '>' {
+		bodyStart++
+	}
+	if bodyStart >= len(node) {
+		return node
+	}
+	bodyStart++ // Skip '>'
+
+	// Find end tag
+	endTag := "</" + tagName + ">"
+	endPos := strings.LastIndex(strings.ToLower(node), endTag)
+	if endPos < 0 {
+		return node
+	}
+
+	body := node[bodyStart:endPos]
+	body = strings.TrimSpace(body)
+
+	// If body contains nested tags, parse them into a map
+	if strings.Contains(body, "<") {
+		parsedBody := parseXMLToStructure(body)
+		// Return as a map with tag name as key
+		return map[string]any{tagName: parsedBody}
+	}
+
+	// Simple text content - return as map with tag name as key
+	return map[string]any{tagName: body}
+}
+
+// appendXMLValue appends a value to a map, converting to array if key already exists
+func appendXMLValue(m map[string]any, key string, value any) {
+	if existing, ok := m[key]; ok {
+		// Convert to array
+		switch v := existing.(type) {
+		case []any:
+			m[key] = append(v, value)
+		default:
+			m[key] = []any{v, value}
+		}
+	} else {
+		m[key] = value
+	}
 }
 
 
