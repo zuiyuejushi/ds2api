@@ -331,11 +331,14 @@ func parseParameterValuePreserveXML(raw string) any {
 		return ""
 	}
 
-	// Handle CDATA - extract content but keep as string
-	// CDATA content does NOT parse numbers, only booleans/null
+	// Handle CDATA - extract content and parse if it's a simple literal
+	// Parse booleans, null, and pure numbers
 	if value, ok := extractStandaloneCDATA(trimmed); ok {
-		// Only parse boolean/null literals, not numbers
-		switch strings.ToLower(strings.TrimSpace(value)) {
+		cleanValue := strings.TrimSpace(value)
+		lowerValue := strings.ToLower(cleanValue)
+
+		// Parse boolean/null literals
+		switch lowerValue {
 		case "true":
 			return true
 		case "false":
@@ -343,6 +346,15 @@ func parseParameterValuePreserveXML(raw string) any {
 		case "null":
 			return nil
 		}
+
+		// Parse pure numbers (optional: check if it's a valid number format)
+		if isPureNumber(cleanValue) {
+			var num float64
+			if err := json.Unmarshal([]byte(cleanValue), &num); err == nil {
+				return num
+			}
+		}
+
 		return value
 	}
 
@@ -357,6 +369,36 @@ func parseParameterValuePreserveXML(raw string) any {
 		return parsed
 	}
 	return value
+}
+
+// isPureNumber checks if a string represents a pure number (integer or float).
+// Allows optional leading minus sign and decimal point.
+func isPureNumber(s string) bool {
+	if s == "" {
+		return false
+	}
+	// Allow optional leading minus
+	start := 0
+	if s[0] == '-' {
+		if len(s) == 1 {
+			return false
+		}
+		start = 1
+	}
+	// Check remaining characters are digits or decimal point
+	hasDecimal := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if c == '.' {
+			if hasDecimal {
+				return false // Multiple decimal points
+			}
+			hasDecimal = true
+		} else if c < '0' || c > '9' {
+			return false // Not a digit
+		}
+	}
+	return true
 }
 
 // parseXMLToStructure converts XML content into a structured map or array.

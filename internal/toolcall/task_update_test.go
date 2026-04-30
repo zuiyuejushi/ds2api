@@ -78,21 +78,21 @@ func TestTaskUpdate(t *testing.T) {
 	}
 
 	// 验证每个调用的参数
-	// CDATA 包裹的 taskId 是字符串，不是数字
+	// CDATA 包裹的纯数字 taskId 解析为 float64
 	for i, call := range calls {
-		expectedTaskId := fmt.Sprintf("%d", i+1)
+		expectedTaskId := float64(i + 1)
 		expectedStatus := "completed"
 		if i == 10 {
 			expectedStatus = "in_progress"
 		}
 
-		taskId, ok := call.Input["taskId"].(string)
+		taskId, ok := call.Input["taskId"].(float64)
 		if !ok {
-			t.Errorf("调用 %d: taskId 不是 string，而是 %T", i+1, call.Input["taskId"])
+			t.Errorf("调用 %d: taskId 不是 float64，而是 %T", i+1, call.Input["taskId"])
 			continue
 		}
 		if taskId != expectedTaskId {
-			t.Errorf("调用 %d: taskId 期望 %q，实际 %q", i+1, expectedTaskId, taskId)
+			t.Errorf("调用 %d: taskId 期望 %v，实际 %v", i+1, expectedTaskId, taskId)
 		}
 
 		status, ok := call.Input["status"].(string)
