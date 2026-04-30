@@ -331,11 +331,17 @@ func parseParameterValuePreserveXML(raw string) any {
 		return ""
 	}
 
-	// Handle CDATA - extract and process content
-	// CDATA content parses JSON literals including numbers
+	// Handle CDATA - extract content but keep as string
+	// CDATA content does NOT parse numbers, only booleans/null
 	if value, ok := extractStandaloneCDATA(trimmed); ok {
-		if parsed, ok := parseJSONLiteralValue(value); ok {
-			return parsed
+		// Only parse boolean/null literals, not numbers
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "true":
+			return true
+		case "false":
+			return false
+		case "null":
+			return nil
 		}
 		return value
 	}
