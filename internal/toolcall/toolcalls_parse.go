@@ -36,7 +36,8 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 	result := ToolCallParseResult{}
 	// Remove DSML markers (with optional surrounding whitespace) before parsing
-	re := regexp.MustCompile(`\s*\|\|DSML\|\|\s*`)
+	// Support both half-width ||DSML|| and full-width ｜｜DSML｜｜
+	re := regexp.MustCompile(`\s*(\|\|DSML\|\||｜｜DSML｜｜)\s*`)
 	text = re.ReplaceAllString(text, "")
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
