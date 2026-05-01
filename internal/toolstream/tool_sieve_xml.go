@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+// dsmlMarkerRegex matches both half-width ||DSML|| and full-width ｜｜DSML｜｜ markers with optional surrounding whitespace
+var dsmlMarkerRegex = regexp.MustCompile(`\s*(\|\|DSML\|\||｜｜DSML｜｜)\s*`)
+
 // --- XML tool call support for the streaming sieve ---
 
 //nolint:unused // kept as explicit tag inventory for future XML sieve refinements.
@@ -28,6 +31,8 @@ var xmlToolTagsToDetect = []string{"<tool_calls>", "<tool_calls\n", "<tool_calls
 
 // consumeXMLToolCapture tries to extract complete XML tool call blocks from captured text.
 func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, calls []toolcall.ParsedToolCall, suffix string, ready bool) {
+	// Remove DSML markers before processing
+	captured = dsmlMarkerRegex.ReplaceAllString(captured, "")
 	lower := strings.ToLower(captured)
 	// Find the FIRST matching open/close pair for the canonical wrapper.
 	for _, pair := range xmlToolCallTagPairs {
@@ -78,6 +83,8 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 // hasOpenXMLToolTag returns true if captured text contains an XML tool opening tag
 // whose SPECIFIC closing tag has not appeared yet.
 func hasOpenXMLToolTag(captured string) bool {
+	// Remove DSML markers before checking
+	captured = dsmlMarkerRegex.ReplaceAllString(captured, "")
 	lower := strings.ToLower(captured)
 	for _, pair := range xmlToolCallTagPairs {
 		openIdx := strings.Index(lower, pair.open)
