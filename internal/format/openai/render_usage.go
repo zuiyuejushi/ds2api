@@ -19,7 +19,6 @@ func BuildChatUsage(finalPrompt, finalThinking, finalText string, refFileIDs []s
 	}
 }
 
-<<<<<<< Updated upstream
 func BuildChatUsageFromUpstream(upstream *sse.TokenUsage, finalPrompt, finalThinking, finalText string) map[string]any {
 	if upstream != nil && upstream.PromptTokens > 0 && upstream.CompletionTokens > 0 {
 		return map[string]any{
@@ -47,10 +46,6 @@ func BuildResponsesUsageFromUpstream(upstream *sse.TokenUsage, finalPrompt, fina
 
 func BuildResponsesUsage(finalPrompt, finalThinking, finalText string, refFileIDs []string) map[string]any {
 	promptTokens := util.EstimateInputTokens(finalPrompt, refFileIDs)
-=======
-func BuildResponsesUsage(finalPrompt, finalThinking, finalText string, refFileIDs []string) map[string]any {
-	promptTokens := util.EstimateInputTokens(finalPrompt, refFileIDs)
->>>>>>> Stashed changes
 	reasoningTokens := util.EstimateTokens(finalThinking)
 	completionTokens := util.EstimateTokens(finalText)
 	return map[string]any{
