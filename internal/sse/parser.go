@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
 
 	dsprotocol "ds2api/internal/deepseek/protocol"
@@ -12,6 +13,82 @@ import (
 type ContentPart struct {
 	Text string
 	Type string
+}
+
+// TokenUsage captures real token counts from DeepSeek upstream SSE.
+type TokenUsage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
+// ExtractTokenUsage scans a DeepSeek SSE chunk for token usage data.
+// DeepSeek sends token counts in BATCH responses:
+//
+//	data: {"p":"response","o":"BATCH","v":[{"p":"token_usage","v":{"prompt_tokens":N,"completion_tokens":M}},{"p":"quasi_status","v":"FINISHED"}]}
+//	data: {"code":"content_filter","accumulated_token_usage":N}
+func ExtractTokenUsage(chunk map[string]any) *TokenUsage {
+	if chunk == nil {
+		return nil
+	}
+
+	// Try top-level accumulated_token_usage first
+	if v, ok := getNumeric(chunk["accumulated_token_usage"]); ok && v > 0 {
+		return &TokenUsage{TotalTokens: v}
+	}
+
+	// Look inside BATCH response arrays
+	arr, _ := chunk["v"].([]any)
+	for _, item := range arr {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		p, _ := m["p"].(string)
+		if p == "token_usage" {
+			v, ok := m["v"].(map[string]any)
+			if !ok {
+				continue
+			}
+			prompt, _ := getNumeric(v["prompt_tokens"])
+			completion, _ := getNumeric(v["completion_tokens"])
+			total, _ := getNumeric(v["total_tokens"])
+			if total <= 0 {
+				total = prompt + completion
+			}
+			if prompt > 0 || completion > 0 || total > 0 {
+				return &TokenUsage{
+					PromptTokens:     prompt,
+					CompletionTokens: completion,
+					TotalTokens:      total,
+				}
+			}
+		}
+		if p == "accumulated_token_usage" {
+			if v, ok := getNumeric(m["v"]); ok && v > 0 {
+				return &TokenUsage{TotalTokens: v}
+			}
+		}
+	}
+	return nil
+}
+
+func getNumeric(v any) (int, bool) {
+	switch x := v.(type) {
+	case int:
+		return x, true
+	case int64:
+		return int(x), true
+	case float64:
+		return int(x), true
+	case float32:
+		return int(x), true
+	case string:
+		n, err := strconv.Atoi(string(x))
+		return n, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func ParseDeepSeekSSELine(raw []byte) (map[string]any, bool, bool) {

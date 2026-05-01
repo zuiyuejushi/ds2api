@@ -1,6 +1,9 @@
 package openai
 
-import "ds2api/internal/util"
+import (
+	"ds2api/internal/sse"
+	"ds2api/internal/util"
+)
 
 func BuildChatUsage(finalPrompt, finalThinking, finalText string) map[string]any {
 	promptTokens := util.EstimateTokens(finalPrompt)
@@ -14,6 +17,31 @@ func BuildChatUsage(finalPrompt, finalThinking, finalText string) map[string]any
 			"reasoning_tokens": reasoningTokens,
 		},
 	}
+}
+
+func BuildChatUsageFromUpstream(upstream *sse.TokenUsage, finalPrompt, finalThinking, finalText string) map[string]any {
+	if upstream != nil && upstream.PromptTokens > 0 && upstream.CompletionTokens > 0 {
+		return map[string]any{
+			"prompt_tokens":     upstream.PromptTokens,
+			"completion_tokens": upstream.CompletionTokens,
+			"total_tokens":      upstream.TotalTokens,
+			"completion_tokens_details": map[string]any{
+				"reasoning_tokens": util.EstimateTokens(finalThinking),
+			},
+		}
+	}
+	return BuildChatUsage(finalPrompt, finalThinking, finalText)
+}
+
+func BuildResponsesUsageFromUpstream(upstream *sse.TokenUsage, finalPrompt, finalThinking, finalText string) map[string]any {
+	if upstream != nil && upstream.PromptTokens > 0 && upstream.CompletionTokens > 0 {
+		return map[string]any{
+			"input_tokens":  upstream.PromptTokens,
+			"output_tokens": upstream.CompletionTokens,
+			"total_tokens":  upstream.TotalTokens,
+		}
+	}
+	return BuildResponsesUsage(finalPrompt, finalThinking, finalText)
 }
 
 func BuildResponsesUsage(finalPrompt, finalThinking, finalText string) map[string]any {
