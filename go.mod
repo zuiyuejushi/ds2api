@@ -11,6 +11,11 @@ require (
 )
 
 require (
+	github.com/dlclark/regexp2 v1.11.5 // indirect
+	github.com/pkoukk/tiktoken-go v0.1.8 // indirect
+)
+
+require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
