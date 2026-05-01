@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"regexp"
 	"strings"
 )
 
@@ -34,6 +35,9 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 
 func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 	result := ToolCallParseResult{}
+	// Remove DSML markers (with optional surrounding whitespace) before parsing
+	re := regexp.MustCompile(`\s*\|\|DSML\|\|\s*`)
+	text = re.ReplaceAllString(text, "")
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return result
