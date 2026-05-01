@@ -46,6 +46,8 @@ type chatStreamRuntime struct {
 	finalErrorStatus  int
 	finalErrorMessage string
 	finalErrorCode    string
+
+	upstreamTokenUsage *sse.TokenUsage
 }
 
 func newChatStreamRuntime(
@@ -206,7 +208,7 @@ func (s *chatStreamRuntime) finalize(finishReason string) {
 		s.sendFailedChunk(status, message, code)
 		return
 	}
-	usage := openaifmt.BuildChatUsage(s.finalPrompt, finalThinking, finalText)
+	usage := openaifmt.BuildChatUsageFromUpstream(s.upstreamTokenUsage, s.finalPrompt, finalThinking, finalText)
 	s.finalFinishReason = finishReason
 	s.finalUsage = usage
 	s.sendChunk(openaifmt.BuildChatStreamChunk(
@@ -220,6 +222,9 @@ func (s *chatStreamRuntime) finalize(finishReason string) {
 }
 
 func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedDecision {
+	if parsed.TokenUsage != nil {
+		s.upstreamTokenUsage = parsed.TokenUsage
+	}
 	if !parsed.Parsed {
 		return streamengine.ParsedDecision{}
 	}
