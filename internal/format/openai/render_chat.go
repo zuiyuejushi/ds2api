@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
+func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string, refFileIDs []string) map[string]any {
 	detected := toolcall.ParseStandaloneToolCallsDetailed(finalText, toolNames)
 	finishReason := "stop"
 	messageObj := map[string]any{"role": "assistant", "content": finalText}
@@ -25,7 +25,7 @@ func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalT
 		"created": time.Now().Unix(),
 		"model":   model,
 		"choices": []map[string]any{{"index": 0, "message": messageObj, "finish_reason": finishReason}},
-		"usage":   BuildChatUsage(finalPrompt, finalThinking, finalText),
+		"usage":   BuildChatUsage(finalPrompt, finalThinking, finalText, refFileIDs),
 	}
 }
 

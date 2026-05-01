@@ -2,9 +2,9 @@ package claude
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
+	"ds2api/internal/prompt"
 	"ds2api/internal/util"
 )
 
@@ -42,7 +42,7 @@ func (s *claudeStreamRuntime) sendPing() {
 }
 
 func (s *claudeStreamRuntime) sendMessageStart() {
-	inputTokens := util.EstimateTokens(fmt.Sprintf("%v", s.messages))
+	inputTokens := util.EstimateTokens(prompt.MessagesPrepareWithThinking(toMessageMaps(s.messages), s.thinkingEnabled))
 	s.send("message_start", map[string]any{
 		"type": "message_start",
 		"message": map[string]any{

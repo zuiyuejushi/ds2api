@@ -3,7 +3,9 @@ package util
 import (
 	"ds2api/internal/claudeconv"
 	"ds2api/internal/config"
+	"ds2api/internal/filetoken"
 	"ds2api/internal/prompt"
+	"ds2api/internal/tokenizer"
 )
 
 const ClaudeDefaultModel = "claude-sonnet-4-6"
@@ -25,27 +27,20 @@ func ConvertClaudeToDeepSeek(claudeReq map[string]any, store *config.Store) map[
 	return claudeconv.ConvertClaudeToDeepSeek(claudeReq, store, ClaudeDefaultModel)
 }
 
-// EstimateTokens provides a rough token count approximation.
-// For ASCII text (English, code, etc.) we use ~4 chars per token.
-// For non-ASCII text (Chinese, Japanese, Korean, etc.) we use ~1.3 chars per token,
-// which better reflects typical BPE tokenizer behavior for CJK scripts.
+// EstimateTokens returns an accurate token count using the cl100k_base tokenizer
+// (OpenAI tiktoken). Falls back to a character-ratio heuristic if the tokenizer
+// is unavailable.
 func EstimateTokens(text string) int {
-	if text == "" {
-		return 0
+	return tokenizer.CountTokens(text)
+}
+
+// EstimateInputTokens returns the total input token count including both the
+// rendered prompt text and any attached file content (via ref_file_ids).
+// File tokens are looked up from the filetoken cache populated during upload.
+func EstimateInputTokens(finalPrompt string, refFileIDs []string) int {
+	tokens := EstimateTokens(finalPrompt)
+	for _, id := range refFileIDs {
+		tokens += filetoken.Get(id)
 	}
-	asciiChars := 0
-	nonASCIIChars := 0
-	for _, r := range text {
-		if r < 128 {
-			asciiChars++
-		} else {
-			nonASCIIChars++
-		}
-	}
-	// ASCII: ~4 chars per token; non-ASCII (CJK): ~1.3 chars per token
-	n := asciiChars/4 + (nonASCIIChars*10+7)/13
-	if n < 1 {
-		return 1
-	}
-	return n
+	return tokens
 }

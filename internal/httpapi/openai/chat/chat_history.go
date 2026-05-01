@@ -183,7 +183,7 @@ func (s *chatHistorySession) stopped(thinking, content, finishReason string) {
 		StatusCode:       http.StatusOK,
 		ElapsedMs:        time.Since(s.startedAt).Milliseconds(),
 		FinishReason:     finishReason,
-		Usage:            openaifmt.BuildChatUsage(s.finalPrompt, thinking, content),
+		Usage:            openaifmt.BuildChatUsage(s.finalPrompt, thinking, content, nil),
 		Completed:        true,
 	})
 }

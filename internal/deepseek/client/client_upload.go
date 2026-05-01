@@ -17,6 +17,8 @@ import (
 	"ds2api/internal/auth"
 	"ds2api/internal/config"
 	trans "ds2api/internal/deepseek/transport"
+	"ds2api/internal/filetoken"
+	"ds2api/internal/util"
 )
 
 type UploadFileRequest struct {
@@ -132,6 +134,8 @@ func (c *Client) UploadFile(ctx context.Context, a *auth.RequestAuth, req Upload
 			if err := c.waitForUploadedFile(ctx, a, result); err != nil {
 				return nil, err
 			}
+			// Store file token count for accurate usage tracking across requests.
+			filetoken.Store(result.ID, util.EstimateTokens(string(req.Data)))
 			return result, nil
 		}
 		config.Logger.Warn("[upload_file] failed", "status", resp.StatusCode, "code", code, "biz_code", bizCode, "msg", msg, "biz_msg", bizMsg, "account", a.AccountID, "filename", filename)

@@ -25,9 +25,11 @@ func TestEstimateTokensShortASCII(t *testing.T) {
 }
 
 func TestEstimateTokensLongASCII(t *testing.T) {
+	// With the tiktoken cl100k_base tokenizer, 100 repeated ASCII chars
+	// is ~13 tokens (more efficient than the old ~4 chars/token heuristic).
 	got := EstimateTokens(strings.Repeat("x", 100))
-	if got != 25 {
-		t.Fatalf("expected 25 for 100 ascii chars, got %d", got)
+	if got != 13 {
+		t.Fatalf("expected 13 for 100 ascii chars, got %d", got)
 	}
 }
 

@@ -10,6 +10,7 @@ func TestBuildMessageResponseSkipsThinkingFallbackWhenFinalTextExists(t *testing
 		`{"tool_calls":[{"name":"search","input":{"q":"go"}}]}`,
 		"normal answer",
 		[]string{"search"},
+		nil,
 	)
 
 	if resp["stop_reason"] != "end_turn" {
