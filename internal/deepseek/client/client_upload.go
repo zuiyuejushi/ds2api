@@ -56,7 +56,12 @@ func (c *Client) UploadFile(ctx context.Context, a *auth.RequestAuth, req Upload
 		contentType = "application/octet-stream"
 	}
 	purpose := strings.TrimSpace(req.Purpose)
-	body, contentTypeHeader, err := buildUploadMultipartBody(filename, contentType, req.Data)
+	// 对文本文件进行预处理压缩
+	data := req.Data
+	if isTextFile(contentType, filename) {
+		data = optimizeTextContent(data)
+	}
+	body, contentTypeHeader, err := buildUploadMultipartBody(filename, contentType, data)
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +223,50 @@ func (c *Client) doUpload(ctx context.Context, doer trans.Doer, fallback trans.D
 		req2.Header.Set(k, v)
 	}
 	return fallback.Do(req2)
+}
+
+// isTextFile 判断是否为文本文件
+func isTextFile(contentType, filename string) bool {
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "text/") || strings.Contains(ct, "application/json") || strings.Contains(ct, "application/xml") {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	return ext == ".txt" || ext == ".md" || ext == ".json" || ext == ".xml" || ext == ".csv" || ext == ".log" || ext == ".go" || ext == ".py" || ext == ".js" || ext == ".html" || ext == ".css"
+}
+
+// optimizeTextContent 优化文本内容，去除冗余空白
+func optimizeTextContent(data []byte) []byte {
+	originalLen := len(data)
+	if originalLen == 0 {
+		return data
+	}
+
+	content := string(data)
+
+	// 去除 \r\n 统一为 \n
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	// 去除多余空行（3个以上连续换行变成2个）
+	for strings.Contains(content, "\n\n\n") {
+		content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
+	}
+
+	// 去除行尾空格
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t")
+	}
+	content = strings.Join(lines, "\n")
+
+	// 去除开头和结尾的空白
+	content = strings.TrimSpace(content)
+
+	result := []byte(content)
+	if len(result) < originalLen {
+		config.Logger.Info("[upload_file] text optimized", "original", originalLen, "optimized", len(result), "saved", originalLen-len(result))
+	}
+	return result
 }
 
 func extractUploadFileResult(resp map[string]any) *UploadFileResult {
