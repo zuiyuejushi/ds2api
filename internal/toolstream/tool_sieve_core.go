@@ -154,8 +154,9 @@ func findToolSegmentStart(state *State, s string) int {
 	if s == "" {
 		return -1
 	}
-	// Remove DSML markers before searching for tool tags
+	// Remove DSML markers and inline fullwidth vertical bars before searching
 	s = dsmlMarkerRegex.ReplaceAllString(s, "")
+	s = strings.ReplaceAll(s, "｜", "")
 	lower := strings.ToLower(s)
 	offset := 0
 	for {

@@ -15,6 +15,7 @@ import (
 	"ds2api/internal/promptcompat"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
+	"ds2api/internal/util"
 )
 
 func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +66,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Precompute full prompt tokens before splits prune the messages.
+	// FinalPrompt is rebuilt from truncated messages after history/input splits,
+	// so we need to capture the real input size here while Messages is intact.
+	fullPrompt, refFileIDs := promptcompat.BuildOpenAIPromptForAdapter(stdReq.Messages, stdReq.ToolsRaw, requestTraceID(r), stdReq.Thinking)
+	stdReq.PrecomputedPromptTokens = util.EstimateInputTokens(fullPrompt, refFileIDs)
+
 	// Start history before any modifications to preserve original user input
 	historySession := startChatHistory(h.ChatHistory, r, a, stdReq)
 	// Apply history split on normalized request
@@ -119,10 +126,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stdReq.Stream {
-		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession)
+		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.PrecomputedPromptTokens, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession)
 		return
 	}
-	h.handleNonStream(w, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession)
+	h.handleNonStream(w, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.PrecomputedPromptTokens, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession)
 }
 
 func (h *Handler) autoDeleteRemoteSession(ctx context.Context, a *auth.RequestAuth, sessionID string) {
@@ -158,7 +165,7 @@ func (h *Handler) autoDeleteRemoteSession(ctx context.Context, a *auth.RequestAu
 	}
 }
 
-func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession) {
+func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, completionID, model, finalPrompt string, precomputedPromptTokens int, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession) {
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
 		body, _ := io.ReadAll(resp.Body)
@@ -192,12 +199,12 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, co
 		}
 	}
 	if historySession != nil {
-		historySession.success(http.StatusOK, finalThinking, finalText, finishReason, openaifmt.BuildChatUsageFromUpstream(result.TokenUsage, finalPrompt, finalThinking, finalText))
+		historySession.success(http.StatusOK, finalThinking, finalText, finishReason, openaifmt.BuildChatUsageFromUpstream(result.TokenUsage, finalPrompt, finalThinking, finalText, precomputedPromptTokens))
 	}
 	writeJSON(w, http.StatusOK, respBody)
 }
 
-func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession) {
+func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *http.Response, completionID, model, finalPrompt string, precomputedPromptTokens int, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -234,6 +241,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 		created,
 		model,
 		finalPrompt,
+		precomputedPromptTokens,
 		thinkingEnabled,
 		searchEnabled,
 		stripReferenceMarkers,

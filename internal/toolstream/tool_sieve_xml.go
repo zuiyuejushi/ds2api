@@ -33,6 +33,8 @@ var xmlToolTagsToDetect = []string{"<tool_calls>", "<tool_calls\n", "<tool_calls
 func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, calls []toolcall.ParsedToolCall, suffix string, ready bool) {
 	// Remove DSML markers before processing
 	captured = dsmlMarkerRegex.ReplaceAllString(captured, "")
+	// Also strip inline fullwidth vertical bars: <｜tag → <tag
+	captured = strings.ReplaceAll(captured, "｜", "")
 	lower := strings.ToLower(captured)
 	// Find the FIRST matching open/close pair for the canonical wrapper.
 	for _, pair := range xmlToolCallTagPairs {
@@ -58,7 +60,10 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 			prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
 			return prefixPart, parsed, suffixPart, true
 		}
-		// If this block failed to become a tool call, pass it through as text.
+		if repaired, ok := toolcall.TryRepairAndParse(xmlBlock, toolNames); ok && len(repaired) > 0 {
+			prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
+			return prefixPart, repaired, suffixPart, true
+		}
 		return prefixPart + xmlBlock, nil, suffixPart, true
 	}
 	if !strings.Contains(lower, "<tool_calls") {
@@ -74,6 +79,10 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 				prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
 				return prefixPart, parsed, suffixPart, true
 			}
+			if repaired, ok := toolcall.TryRepairAndParse(xmlBlock, toolNames); ok && len(repaired) > 0 {
+				prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
+				return prefixPart, repaired, suffixPart, true
+			}
 			return prefixPart + captured[invokeIdx:closeEnd], nil, suffixPart, true
 		}
 	}
@@ -85,6 +94,8 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 func hasOpenXMLToolTag(captured string) bool {
 	// Remove DSML markers before checking
 	captured = dsmlMarkerRegex.ReplaceAllString(captured, "")
+	// Also strip inline fullwidth vertical bars: <｜tag → <tag
+	captured = strings.ReplaceAll(captured, "｜", "")
 	lower := strings.ToLower(captured)
 	for _, pair := range xmlToolCallTagPairs {
 		openIdx := strings.Index(lower, pair.open)

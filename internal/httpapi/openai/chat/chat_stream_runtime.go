@@ -38,6 +38,7 @@ type chatStreamRuntime struct {
 	streamToolNames   map[int]string
 	thinking          strings.Builder
 	text              strings.Builder
+	rawText           strings.Builder // tracks ALL text for overlap detection (includes DSML markup)
 
 	finalThinking     string
 	finalText         string
@@ -47,7 +48,8 @@ type chatStreamRuntime struct {
 	finalErrorMessage string
 	finalErrorCode    string
 
-	upstreamTokenUsage *sse.TokenUsage
+	upstreamTokenUsage      *sse.TokenUsage
+	precomputedPromptTokens int
 }
 
 func newChatStreamRuntime(
@@ -58,6 +60,7 @@ func newChatStreamRuntime(
 	created int64,
 	model string,
 	finalPrompt string,
+	precomputedPromptTokens int,
 	thinkingEnabled bool,
 	searchEnabled bool,
 	stripReferenceMarkers bool,
@@ -66,21 +69,22 @@ func newChatStreamRuntime(
 	emitEarlyToolDeltas bool,
 ) *chatStreamRuntime {
 	return &chatStreamRuntime{
-		w:                     w,
-		rc:                    rc,
-		canFlush:              canFlush,
-		completionID:          completionID,
-		created:               created,
-		model:                 model,
-		finalPrompt:           finalPrompt,
-		toolNames:             toolNames,
-		thinkingEnabled:       thinkingEnabled,
-		searchEnabled:         searchEnabled,
-		stripReferenceMarkers: stripReferenceMarkers,
-		bufferToolContent:     bufferToolContent,
-		emitEarlyToolDeltas:   emitEarlyToolDeltas,
-		streamToolCallIDs:     map[int]string{},
-		streamToolNames:       map[int]string{},
+		w:                       w,
+		rc:                      rc,
+		canFlush:                canFlush,
+		completionID:            completionID,
+		created:                 created,
+		model:                   model,
+		finalPrompt:             finalPrompt,
+		precomputedPromptTokens: precomputedPromptTokens,
+		toolNames:               toolNames,
+		thinkingEnabled:         thinkingEnabled,
+		searchEnabled:           searchEnabled,
+		stripReferenceMarkers:   stripReferenceMarkers,
+		bufferToolContent:       bufferToolContent,
+		emitEarlyToolDeltas:     emitEarlyToolDeltas,
+		streamToolCallIDs:       map[int]string{},
+		streamToolNames:         map[int]string{},
 	}
 }
 
@@ -179,6 +183,7 @@ func (s *chatStreamRuntime) finalize(finishReason string) {
 			if evt.Content == "" {
 				continue
 			}
+			s.text.WriteString(evt.Content)
 			cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
 			if cleaned == "" {
 				continue
@@ -208,7 +213,7 @@ func (s *chatStreamRuntime) finalize(finishReason string) {
 		s.sendFailedChunk(status, message, code)
 		return
 	}
-	usage := openaifmt.BuildChatUsageFromUpstream(s.upstreamTokenUsage, s.finalPrompt, finalThinking, finalText)
+	usage := openaifmt.BuildChatUsageFromUpstream(s.upstreamTokenUsage, s.finalPrompt, finalThinking, finalText, s.precomputedPromptTokens)
 	s.finalFinishReason = finishReason
 	s.finalUsage = usage
 	s.sendChunk(openaifmt.BuildChatStreamChunk(
@@ -267,12 +272,13 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 				delta["reasoning_content"] = trimmed
 			}
 		} else {
-			trimmed := sse.TrimContinuationOverlap(s.text.String(), cleanedText)
+			trimmed := sse.TrimContinuationOverlap(s.rawText.String(), cleanedText)
 			if trimmed == "" {
 				continue
 			}
-			s.text.WriteString(trimmed)
+			s.rawText.WriteString(trimmed)
 			if !s.bufferToolContent {
+				s.text.WriteString(trimmed)
 				delta["content"] = trimmed
 			} else {
 				events := toolstream.ProcessChunk(&s.toolSieve, trimmed, s.toolNames)
@@ -315,6 +321,7 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 						continue
 					}
 					if evt.Content != "" {
+						s.text.WriteString(evt.Content)
 						cleaned := cleanVisibleOutput(evt.Content, s.stripReferenceMarkers)
 						if cleaned == "" {
 							continue

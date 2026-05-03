@@ -36,6 +36,11 @@ var leakedAgentWrapperPlusResultOpenPattern = regexp.MustCompile(`(?is)<(?:attem
 var leakedAgentResultPlusWrapperClosePattern = regexp.MustCompile(`(?is)</result>\s*</(?:attempt_completion|ask_followup_question|new_task)\b[^>]*>`)
 var leakedAgentResultTagPattern = regexp.MustCompile(`(?is)</?result>`)
 
+// leakedDSMLPattern matches DeepSeek DSML markers in both half-width ()
+// and full-width (ÔĹúÔĹúDSMLÔĹúÔĹú, U+FF5C) forms that can leak into visible output
+// when the tool sieve fails to capture DSML-wrapped content.
+var leakedDSMLPattern = regexp.MustCompile(`\|\|DSML\|\||\x{FF5C}DSML\x{FF5C}|\x{FF5C}`)
+
 func sanitizeLeakedOutput(text string) string {
 	if text == "" {
 		return text
@@ -48,6 +53,7 @@ func sanitizeLeakedOutput(text string) string {
 	out = leakedBOSMarkerPattern.ReplaceAllString(out, "")
 	out = leakedMetaMarkerPattern.ReplaceAllString(out, "")
 	out = sanitizeLeakedAgentXMLBlocks(out)
+	out = leakedDSMLPattern.ReplaceAllString(out, "")
 	return out
 }
 
