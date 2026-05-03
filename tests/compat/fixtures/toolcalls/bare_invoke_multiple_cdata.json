@@ -1,0 +1,6 @@
+{
+  "text": "<invoke name=\"Read\">\n  <parameter name=\"file_path\"><![CDATA[/root/xylocopa-projects/idledo/backend/src/utils/cultivationSkillPool.ts]]></parameter>\n</invoke>\n<invoke name=\"Read\">\n  <parameter name=\"file_path\"><![CDATA[/root/xylocopa-projects/idledo/backend/src/services/battleService.ts]]></parameter>\n  <parameter name=\"limit\"><![CDATA[80]]></parameter>\n  <parameter name=\"offset\"><![CDATA[1555]]></parameter>\n</invoke>\n<invoke name=\"Read\">\n  <parameter name=\"file_path\"><![CDATA[/root/xylocopa-projects/idledo/backend/prisma/seed-cultivation.ts]]></parameter>\n  <parameter name=\"limit\"><![CDATA[80]]></parameter>\n  <parameter name=\"offset\"><![CDATA[38]]></parameter>\n</invoke>",
+  "tool_names": [
+    "Read"
+  ]
+}

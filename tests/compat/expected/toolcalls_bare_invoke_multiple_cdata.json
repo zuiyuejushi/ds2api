@@ -1,0 +1,29 @@
+{
+  "calls": [
+    {
+      "name": "Read",
+      "input": {
+        "file_path": "/root/xylocopa-projects/idledo/backend/src/utils/cultivationSkillPool.ts"
+      }
+    },
+    {
+      "name": "Read",
+      "input": {
+        "file_path": "/root/xylocopa-projects/idledo/backend/src/services/battleService.ts",
+        "limit": "80",
+        "offset": "1555"
+      }
+    },
+    {
+      "name": "Read",
+      "input": {
+        "file_path": "/root/xylocopa-projects/idledo/backend/prisma/seed-cultivation.ts",
+        "limit": "80",
+        "offset": "38"
+      }
+    }
+  ],
+  "sawToolCallSyntax": true,
+  "rejectedByPolicy": false,
+  "rejectedToolNames": []
+}

@@ -1,0 +1,21 @@
+{
+  "calls": [
+    {
+      "name": "Skill",
+      "input": {
+        "skill": "cancel",
+        "args": "autopilot complete — 4 warlock skill effects implemented, all tests pass"
+      }
+    },
+    {
+      "name": "Bash",
+      "input": {
+        "description": "Verify .omc is fully untracked",
+        "command": "cd /root/xylocopa-projects/idledo && git ls-files .omc/ 2>/dev/null; echo \"---\"; git diff --stat .gitignore"
+      }
+    }
+  ],
+  "sawToolCallSyntax": true,
+  "rejectedByPolicy": false,
+  "rejectedToolNames": []
+}

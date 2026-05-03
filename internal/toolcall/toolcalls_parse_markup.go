@@ -19,9 +19,6 @@ func parseXMLToolCalls(text string) []ParsedToolCall {
 			wrappers = findXMLElementBlocks(repaired, "tool_calls")
 		}
 	}
-	if len(wrappers) == 0 {
-		return nil
-	}
 	out := make([]ParsedToolCall, 0, len(wrappers))
 	for _, wrapper := range wrappers {
 		for _, block := range findXMLElementBlocks(wrapper.Body, "invoke") {
@@ -32,10 +29,31 @@ func parseXMLToolCalls(text string) []ParsedToolCall {
 			out = append(out, call)
 		}
 	}
+	// Also parse bare <invoke> tags outside <tool_calls> wrappers
+	for _, block := range findXMLElementBlocks(text, "invoke") {
+		// Skip invokes already parsed inside wrappers
+		if isInsideAnyWrapper(block, wrappers) {
+			continue
+		}
+		call, ok := parseSingleXMLToolCall(block)
+		if !ok {
+			continue
+		}
+		out = append(out, call)
+	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func isInsideAnyWrapper(block xmlElementBlock, wrappers []xmlElementBlock) bool {
+	for _, w := range wrappers {
+		if block.Start >= w.Start && block.End <= w.End {
+			return true
+		}
+	}
+	return false
 }
 
 func repairMissingXMLToolCallsOpeningWrapper(text string) string {
@@ -417,5 +435,3 @@ func parseXMLToStructure(xmlContent string) any {
 
 	return trimmed
 }
-
-

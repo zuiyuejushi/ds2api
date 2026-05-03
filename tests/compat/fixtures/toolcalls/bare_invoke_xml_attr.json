@@ -1,0 +1,6 @@
+{
+  "text": "<invoke name=\"Bash\">\n  <parameter name=\"description\" xml=\"true\">Verify .omc is fully untracked</parameter>\n  <parameter name=\"command\" xml=\"true\">cd /root/xylocopa-projects/idledo && git ls-files .omc/ 2>/dev/null; echo \"---\"; git diff --stat .gitignore</parameter>\n</invoke>",
+  "tool_names": [
+    "Bash"
+  ]
+}
