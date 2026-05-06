@@ -14,6 +14,7 @@ import (
 	openaifmt "ds2api/internal/format/openai"
 	"ds2api/internal/promptcompat"
 	"ds2api/internal/sse"
+	"ds2api/internal/thinkingcache"
 	streamengine "ds2api/internal/stream"
 	"ds2api/internal/util"
 )
@@ -56,6 +57,25 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+
+	// Save original messages for thinking cache (before any modifications)
+	var originalMessages []any
+	if msgs, ok := req["messages"].([]any); ok {
+		originalMessages = msgs
+	}
+
+	// Entry point: Apply thinking cache to restore assistant reasoning from previous turns
+	cacheModel := ""
+	if m, ok := req["model"].(string); ok {
+		cacheModel = m
+	}
+	if len(originalMessages) > 0 && cacheModel != "" {
+		if injectedMessages, changed := thinkingcache.Apply(originalMessages, cacheModel); changed {
+			req["messages"] = injectedMessages
+			originalMessages = injectedMessages
+		}
+	}
+
 	if err := h.preprocessInlineFileInputs(r.Context(), a, req); err != nil {
 		writeOpenAIInlineFileError(w, err)
 		return
@@ -126,10 +146,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stdReq.Stream {
-		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.PrecomputedPromptTokens, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession)
+		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.PrecomputedPromptTokens, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession, originalMessages, cacheModel)
 		return
 	}
-	h.handleNonStream(w, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.PrecomputedPromptTokens, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession)
+	h.handleNonStream(w, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.PrecomputedPromptTokens, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, historySession, originalMessages, cacheModel)
 }
 
 func (h *Handler) autoDeleteRemoteSession(ctx context.Context, a *auth.RequestAuth, sessionID string) {
@@ -165,7 +185,7 @@ func (h *Handler) autoDeleteRemoteSession(ctx context.Context, a *auth.RequestAu
 	}
 }
 
-func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, completionID, model, finalPrompt string, precomputedPromptTokens int, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession) {
+func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, completionID, model, finalPrompt string, precomputedPromptTokens int, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession, originalMessages []any, cacheModel string) {
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
 		body, _ := io.ReadAll(resp.Body)
@@ -201,10 +221,16 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, resp *http.Response, co
 	if historySession != nil {
 		historySession.success(http.StatusOK, finalThinking, finalText, finishReason, openaifmt.BuildChatUsageFromUpstream(result.TokenUsage, finalPrompt, finalThinking, finalText, precomputedPromptTokens))
 	}
+
+	// Exit point: Store thinking content for future turns (non-stream)
+	if finalThinking != "" {
+		thinkingcache.Store(originalMessages, cacheModel, finalThinking)
+	}
+
 	writeJSON(w, http.StatusOK, respBody)
 }
 
-func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *http.Response, completionID, model, finalPrompt string, precomputedPromptTokens int, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession) {
+func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *http.Response, completionID, model, finalPrompt string, precomputedPromptTokens int, thinkingEnabled, searchEnabled bool, toolNames []string, historySession *chatHistorySession, originalMessages []any, cacheModel string) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -248,6 +274,8 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 		toolNames,
 		bufferToolContent,
 		emitEarlyToolDeltas,
+		originalMessages,
+		cacheModel,
 	)
 
 	streamengine.ConsumeSSE(streamengine.ConsumeConfig{
@@ -275,6 +303,12 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 			} else {
 				streamRuntime.finalize("stop")
 			}
+
+			// Exit point: Store thinking content for future turns (stream)
+			if streamRuntime.finalThinking != "" {
+				thinkingcache.Store(streamRuntime.originalMessages, streamRuntime.cacheModel, streamRuntime.finalThinking)
+			}
+
 			if historySession == nil {
 				return
 			}
