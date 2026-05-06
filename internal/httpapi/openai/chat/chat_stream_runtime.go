@@ -50,6 +50,10 @@ type chatStreamRuntime struct {
 
 	upstreamTokenUsage      *sse.TokenUsage
 	precomputedPromptTokens int
+
+	// For thinking cache
+	originalMessages []any
+	cacheModel       string
 }
 
 func newChatStreamRuntime(
@@ -67,6 +71,8 @@ func newChatStreamRuntime(
 	toolNames []string,
 	bufferToolContent bool,
 	emitEarlyToolDeltas bool,
+	originalMessages []any,
+	cacheModel string,
 ) *chatStreamRuntime {
 	return &chatStreamRuntime{
 		w:                       w,
@@ -85,6 +91,8 @@ func newChatStreamRuntime(
 		emitEarlyToolDeltas:     emitEarlyToolDeltas,
 		streamToolCallIDs:       map[int]string{},
 		streamToolNames:         map[int]string{},
+		originalMessages:        originalMessages,
+		cacheModel:              cacheModel,
 	}
 }
 
