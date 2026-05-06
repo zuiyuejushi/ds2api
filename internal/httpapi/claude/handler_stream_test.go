@@ -104,7 +104,7 @@ func TestHandleClaudeStreamRealtimeTextIncrementsWithEventHeaders(t *testing.T) 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
 
-	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "hi"}}, false, false, nil, nil)
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "hi"}}, false, false, nil, nil, nil, nil, "")
 
 	body := rec.Body.String()
 	if !strings.Contains(body, "event: message_start") {
@@ -146,7 +146,7 @@ func TestHandleClaudeStreamRealtimeToolBufferedPlainTextDoesNotRepeatFinalText(t
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
 
-	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, false, false, []string{"Bash"}, nil)
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, false, false, []string{"Bash"}, nil, nil, nil, "")
 
 	frames := parseClaudeFrames(t, rec.Body.String())
 	if got := collectClaudeTextDeltas(frames); got != want {
@@ -165,7 +165,7 @@ func TestHandleClaudeStreamRealtimeTrimsContinuationReplay(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
 
-	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "hi"}}, false, false, nil, nil)
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "hi"}}, false, false, nil, nil, nil, nil, "")
 
 	frames := parseClaudeFrames(t, rec.Body.String())
 	combined := strings.Builder{}
@@ -191,7 +191,7 @@ func TestHandleClaudeStreamRealtimeThinkingDelta(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
 
-	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "hi"}}, true, false, nil, nil)
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "hi"}}, true, false, nil, nil, nil, nil, "")
 
 	frames := parseClaudeFrames(t, rec.Body.String())
 	foundThinkingDelta := false
@@ -218,7 +218,7 @@ func TestHandleClaudeStreamRealtimeSkipsThinkingFallbackWhenFinalTextExists(t *t
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
 
-	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, true, false, []string{"search"}, nil)
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "use tool"}}, true, false, []string{"search"}, nil, nil, nil, "")
 
 	frames := parseClaudeFrames(t, rec.Body.String())
 	for _, f := range findClaudeFrames(frames, "content_block_start") {

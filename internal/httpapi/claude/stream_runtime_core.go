@@ -48,6 +48,10 @@ type claudeStreamRuntime struct {
 	ended              bool
 	upstreamErr        string
 	history            *responsehistory.Session
+
+	// For thinking cache
+	originalMessages []any
+	cacheModel       string
 }
 
 func newClaudeStreamRuntime(
@@ -82,6 +86,28 @@ func newClaudeStreamRuntime(
 		thinkingBlockIndex:    -1,
 		textBlockIndex:        -1,
 	}
+}
+
+func newClaudeStreamRuntimeWithCache(
+	w http.ResponseWriter,
+	rc *http.ResponseController,
+	canFlush bool,
+	model string,
+	messages []any,
+	thinkingEnabled bool,
+	searchEnabled bool,
+	stripReferenceMarkers bool,
+	toolNames []string,
+	toolsRaw any,
+	promptTokenText string,
+	history *responsehistory.Session,
+	originalMessages []any,
+	cacheModel string,
+) *claudeStreamRuntime {
+	s := newClaudeStreamRuntime(w, rc, canFlush, model, messages, thinkingEnabled, searchEnabled, stripReferenceMarkers, toolNames, toolsRaw, promptTokenText, history)
+	s.originalMessages = originalMessages
+	s.cacheModel = cacheModel
+	return s
 }
 
 func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedDecision {

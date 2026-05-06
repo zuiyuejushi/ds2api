@@ -14,6 +14,12 @@ import (
 	trans "ds2api/internal/deepseek/transport"
 )
 
+// ThinkingCacheInjector is a function that injects thinking content into request payload
+var ThinkingCacheInjector func(payload map[string]any, model string) map[string]any
+
+// ThinkingCacheExtractor is a function that extracts and stores thinking from response
+var ThinkingCacheExtractor func(payload map[string]any, model string, thinking string)
+
 func (c *Client) CallCompletion(ctx context.Context, a *auth.RequestAuth, payload map[string]any, powResp string, maxAttempts int) (*http.Response, error) {
 	if maxAttempts <= 0 {
 		maxAttempts = c.maxRetries

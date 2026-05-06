@@ -4,6 +4,7 @@ import (
 	"ds2api/internal/assistantturn"
 	"ds2api/internal/responsehistory"
 	"ds2api/internal/sse"
+	"ds2api/internal/thinkingcache"
 	"ds2api/internal/toolcall"
 	"ds2api/internal/toolstream"
 	"encoding/json"
@@ -184,6 +185,11 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 			stopReason,
 			responsehistory.GenericUsage(turn),
 		)
+	}
+
+	// Exit point: Store thinking content for future turns (stream)
+	if thinking := turn.Thinking; thinking != "" {
+		thinkingcache.Store(s.originalMessages, s.cacheModel, thinking)
 	}
 
 	s.send("message_delta", map[string]any{
