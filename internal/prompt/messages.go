@@ -20,6 +20,9 @@ const (
 	endInstructionsMarker = "<｜end▁of▁instructions｜>"
 )
 
+// defaultEncodingInstruction is prepended to every prompt to ensure UTF-8 handling.
+const defaultEncodingInstruction = "Use UTF-8 encoding."
+
 func MessagesPrepare(messages []map[string]any) string {
 	return MessagesPrepareWithThinking(messages, false)
 }
@@ -51,8 +54,9 @@ func MessagesPrepareWithThinking(messages []map[string]any, thinkingEnabled bool
 		}
 		merged = append(merged, msg)
 	}
-	parts := make([]string, 0, len(merged)+2)
+	parts := make([]string, 0, len(merged)+3)
 	parts = append(parts, beginSentenceMarker)
+	parts = append(parts, formatRoleBlock(systemMarker, defaultEncodingInstruction, endInstructionsMarker))
 	lastRole := ""
 	for _, m := range merged {
 		lastRole = m.Role
