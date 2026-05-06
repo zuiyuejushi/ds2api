@@ -22,7 +22,8 @@ function parseMarkupToolCalls(text) {
     return [];
   }
   const out = [];
-  for (const wrapper of findXmlElementBlocks(raw, 'tool_calls')) {
+  const wrappers = findXmlElementBlocks(raw, 'tool_calls');
+  for (const wrapper of wrappers) {
     const body = toStringSafe(wrapper.body);
     for (const block of findXmlElementBlocks(body, 'invoke')) {
       const parsed = parseMarkupSingleToolCall(block);
@@ -31,7 +32,26 @@ function parseMarkupToolCalls(text) {
       }
     }
   }
+  // Also parse bare <invoke> tags outside <tool_calls> wrappers
+  for (const block of findXmlElementBlocks(raw, 'invoke')) {
+    if (isInsideAnyWrapper(block, wrappers)) {
+      continue;
+    }
+    const parsed = parseMarkupSingleToolCall(block);
+    if (parsed) {
+      out.push(parsed);
+    }
+  }
   return out;
+}
+
+function isInsideAnyWrapper(block, wrappers) {
+  for (const w of wrappers) {
+    if (block.start >= w.start && block.end <= w.end) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function parseMarkupSingleToolCall(block) {
