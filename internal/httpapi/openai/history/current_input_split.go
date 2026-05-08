@@ -53,21 +53,15 @@ type CurrentInputSplitService struct {
 	DS    shared.DeepSeekCaller
 }
 
-// Apply uploads current input as a file.
-// If history split was already applied (HistoryText is set), history is not included to avoid duplication.
-// Order: history first (if not already split), tools middle, current input last (closest to latest messages for attention).
+// Apply uploads history + current input as a single file unconditionally.
+// Order: history first, tools middle, current input last (closest to latest messages for attention).
 func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptcompat.StandardRequest) (promptcompat.StandardRequest, error) {
 	if s.DS == nil || s.Store == nil || a == nil {
 		return stdReq, nil
 	}
 
-	// Check if history split was already applied
-	// If HistoryText is set, history was already uploaded as a separate file, so we don't include it again
+	// Get history text if available
 	historyText := strings.TrimSpace(stdReq.HistoryText)
-	if historyText != "" {
-		// History already uploaded via history split, don't include it again
-		historyText = ""
-	}
 
 	// Build content from all messages — including system, user, assistant, tool
 	currentContent := buildCurrentTurnContent(stdReq.Messages)
@@ -115,7 +109,7 @@ func (s CurrentInputSplitService) Apply(ctx context.Context, a *auth.RequestAuth
 	// Update the request
 	stdReq.Messages = newMessages
 	stdReq.HistoryText = ""
-	stdReq.RefFileIDs = append(stdReq.RefFileIDs, fileID)
+	stdReq.RefFileIDs = []string{fileID}
 	stdReq.FinalPrompt, _ = promptcompat.BuildOpenAIPrompt(newMessages, nil, "", promptcompat.ToolChoicePolicy{Mode: promptcompat.ToolChoiceNone}, stdReq.Thinking)
 
 	return stdReq, nil
