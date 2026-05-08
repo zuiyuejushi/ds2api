@@ -76,6 +76,8 @@ func parseToolCallsDetailedXMLOnly(text string) ToolCallParseResult {
 
 func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []string) {
 	out := make([]ParsedToolCall, 0, len(parsed))
+	seenReadPaths := make(map[string]bool) // For deduplicating Read tool calls by path
+
 	for _, tc := range parsed {
 		if tc.Name == "" {
 			continue
@@ -83,9 +85,42 @@ func filterToolCallsDetailed(parsed []ParsedToolCall) ([]ParsedToolCall, []strin
 		if tc.Input == nil {
 			tc.Input = map[string]any{}
 		}
+
+		// Deduplicate Read tools by path
+		if isReadTool(tc.Name) {
+			pathKey := getReadPathKey(tc.Input)
+			// Only deduplicate if we have a valid path
+			if pathKey != "" {
+				if seenReadPaths[pathKey] {
+					// Duplicate path, skip
+					continue
+				}
+				seenReadPaths[pathKey] = true
+			}
+		}
+
 		out = append(out, tc)
 	}
 	return out, nil
+}
+
+// getReadPathKey extracts the path from Read tool input for deduplication
+func getReadPathKey(input map[string]any) string {
+	priorityKeys := []string{"file_path", "path", "file", "filepath"}
+	for _, key := range priorityKeys {
+		if v, ok := input[key]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+	}
+	// Fallback: return first string value found
+	for _, v := range input {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 func looksLikeToolCallSyntax(text string) bool {

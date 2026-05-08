@@ -98,6 +98,100 @@ func getKeys(m map[string]any) []string {
 	return keys
 }
 
+func TestDeduplicateReadToolCalls(t *testing.T) {
+	tests := []struct {
+		name          string
+		xml           string
+		expectedCnt   int
+		expectedPaths []string
+	}{
+		{
+			name: "duplicate paths should be deduplicated",
+			xml: `<tool_calls>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file.go</parameter>
+					<parameter name="limit">100</parameter>
+				</invoke>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file.go</parameter>
+					<parameter name="offset">50</parameter>
+				</invoke>
+			</tool_calls>`,
+			expectedCnt:   1,
+			expectedPaths: []string{"/path/to/file.go"},
+		},
+		{
+			name: "different paths should all be kept",
+			xml: `<tool_calls>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file1.go</parameter>
+				</invoke>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file2.go</parameter>
+				</invoke>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file3.go</parameter>
+				</invoke>
+			</tool_calls>`,
+			expectedCnt:   3,
+			expectedPaths: []string{"/path/to/file1.go", "/path/to/file2.go", "/path/to/file3.go"},
+		},
+		{
+			name: "mixed duplicate and unique paths",
+			xml: `<tool_calls>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file1.go</parameter>
+				</invoke>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file2.go</parameter>
+				</invoke>
+				<invoke name="read">
+					<parameter name="file_path">/path/to/file1.go</parameter>
+				</invoke>
+			</tool_calls>`,
+			expectedCnt:   2,
+			expectedPaths: []string{"/path/to/file1.go", "/path/to/file2.go"},
+		},
+		{
+			name: "non-read tools should not be deduplicated",
+			xml: `<tool_calls>
+				<invoke name="bash">
+					<parameter name="command">echo 1</parameter>
+				</invoke>
+				<invoke name="bash">
+					<parameter name="command">echo 1</parameter>
+				</invoke>
+			</tool_calls>`,
+			expectedCnt:   2,
+			expectedPaths: nil, // bash tools don't have paths
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := ParseToolCalls(tt.xml, []string{"read", "bash"})
+			if len(calls) != tt.expectedCnt {
+				t.Errorf("expected %d calls, got %d", tt.expectedCnt, len(calls))
+			}
+
+			if tt.expectedPaths != nil {
+				pathSet := make(map[string]bool)
+				for _, call := range calls {
+					path := getReadPathKey(call.Input)
+					if path != "" {
+						pathSet[path] = true
+					}
+				}
+				for _, expectedPath := range tt.expectedPaths {
+					if !pathSet[expectedPath] {
+						t.Errorf("expected path %q not found", expectedPath)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestIsReadTool(t *testing.T) {
 	tests := []struct {
 		name     string
