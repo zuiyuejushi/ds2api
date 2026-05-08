@@ -172,10 +172,11 @@ func TestApplyHistorySplitCarriesHistoryText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply history split failed: %v", err)
 	}
-	if len(ds.uploadCalls) != 1 {
-		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
+	// History split no longer uploads files - only current_input_split handles uploads
+	if len(ds.uploadCalls) != 0 {
+		t.Fatalf("expected 0 upload calls from history split, got %d", len(ds.uploadCalls))
 	}
-	if out.HistoryText != string(ds.uploadCalls[0].Data) {
+	if out.HistoryText == "" {
 		t.Fatalf("expected history text to be preserved on normalized request")
 	}
 }
@@ -206,30 +207,12 @@ func TestChatCompletionsHistorySplitUploadsHistoryFileAndKeepsLatestPrompt(t *te
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	// Expect 2 uploads: HISTORY.txt + CONTEXT.txt
-	if len(ds.uploadCalls) != 2 {
-		t.Fatalf("expected 2 upload calls (history + current input), got %d", len(ds.uploadCalls))
+	// Only current_input_split uploads: CONTEXT.txt (history split no longer uploads)
+	if len(ds.uploadCalls) != 1 {
+		t.Fatalf("expected 1 upload call (current input only), got %d", len(ds.uploadCalls))
 	}
-	// Find history upload
-	var historyUpload dsclient.UploadFileRequest
-	for _, u := range ds.uploadCalls {
-		if u.Filename == "HISTORY.txt" {
-			historyUpload = u
-			break
-		}
-	}
-	if historyUpload.Filename != "HISTORY.txt" {
-		t.Fatalf("unexpected upload filename: %q", historyUpload.Filename)
-	}
-	if historyUpload.Purpose != "assistants" {
-		t.Fatalf("unexpected purpose: %q", historyUpload.Purpose)
-	}
-	historyText := string(historyUpload.Data)
-	if !strings.Contains(historyText, "[file content end]") || !strings.Contains(historyText, "[file name]: IGNORE") {
-		t.Fatalf("expected injected IGNORE wrapper, got %s", historyText)
-	}
-	if strings.Contains(historyText, "latest user turn") {
-		t.Fatalf("expected latest turn to remain live, got %s", historyText)
+	if ds.uploadCalls[0].Filename != "CONTEXT.txt" {
+		t.Fatalf("expected CONTEXT.txt upload, got %q", ds.uploadCalls[0].Filename)
 	}
 	if ds.completionReq == nil {
 		t.Fatal("expected completion payload to be captured")
@@ -243,9 +226,9 @@ func TestChatCompletionsHistorySplitUploadsHistoryFileAndKeepsLatestPrompt(t *te
 		t.Fatalf("expected historical turns removed from completion prompt, got %s", promptText)
 	}
 	refIDs, _ := ds.completionReq["ref_file_ids"].([]any)
-	// Expect 2 ref files: HISTORY.txt + INPUT.txt
-	if len(refIDs) < 2 {
-		t.Fatalf("expected 2 ref_file_ids (history + input), got %#v", ds.completionReq["ref_file_ids"])
+	// Only 1 ref file: CONTEXT.txt (history split no longer uploads)
+	if len(refIDs) < 1 {
+		t.Fatalf("expected 1 ref_file_id (current input), got %#v", ds.completionReq["ref_file_ids"])
 	}
 }
 
@@ -277,9 +260,9 @@ func TestResponsesHistorySplitUploadsHistoryAndKeepsLatestPrompt(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	// Expect 2 uploads: HISTORY.txt + CONTEXT.txt
-	if len(ds.uploadCalls) != 2 {
-		t.Fatalf("expected 2 upload calls (history + current input), got %d", len(ds.uploadCalls))
+	// Only current_input_split uploads: CONTEXT.txt (history split no longer uploads)
+	if len(ds.uploadCalls) != 1 {
+		t.Fatalf("expected 1 upload call (current input only), got %d", len(ds.uploadCalls))
 	}
 	if ds.completionReq == nil {
 		t.Fatal("expected completion payload to be captured")
@@ -419,9 +402,9 @@ func TestHistorySplitWorksAcrossAutoDeleteModes(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 			}
-			// Expect 2 uploads: HISTORY.txt + CONTEXT.txt
-			if len(ds.uploadCalls) != 2 {
-				t.Fatalf("expected 2 uploads (history + current input) for mode=%s, got %d", mode, len(ds.uploadCalls))
+			// Only current_input_split uploads: CONTEXT.txt (history split no longer uploads)
+			if len(ds.uploadCalls) != 1 {
+				t.Fatalf("expected 1 upload (current input only) for mode=%s, got %d", mode, len(ds.uploadCalls))
 			}
 			if ds.completionReq == nil {
 				t.Fatalf("expected completion payload for mode=%s", mode)

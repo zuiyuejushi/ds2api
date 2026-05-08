@@ -3,11 +3,9 @@ package history
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"ds2api/internal/auth"
-	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
 )
@@ -38,19 +36,20 @@ func (s Service) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptco
 		return stdReq, errors.New("history split produced empty transcript")
 	}
 
-	result, err := s.DS.UploadFile(ctx, a, dsclient.UploadFileRequest{
-		Filename:    historySplitFilename,
-		ContentType: historySplitContentType,
-		Purpose:     historySplitPurpose,
-		Data:        []byte(historyText),
-	}, 3)
-	if err != nil {
-		return stdReq, fmt.Errorf("upload history file: %w", err)
-	}
-	fileID := strings.TrimSpace(result.ID)
-	if fileID == "" {
-		return stdReq, errors.New("upload history file returned empty file id")
-	}
+	// Upload disabled - only current_input_split handles file uploads
+	// result, err := s.DS.UploadFile(ctx, a, dsclient.UploadFileRequest{
+	// 	Filename:    historySplitFilename,
+	// 	ContentType: historySplitContentType,
+	// 	Purpose:     historySplitPurpose,
+	// 	Data:        []byte(historyText),
+	// }, 3)
+	// if err != nil {
+	// 	return stdReq, fmt.Errorf("upload history file: %w", err)
+	// }
+	// fileID := strings.TrimSpace(result.ID)
+	// if fileID == "" {
+	// 	return stdReq, errors.New("upload history file returned empty file id")
+	// }
 
 	// Inject tool format instructions into the prompt (no schemas — schemas later go to file)
 	_, toolNames := buildToolsContent(stdReq.ToolsRaw)
@@ -58,7 +57,7 @@ func (s Service) Apply(ctx context.Context, a *auth.RequestAuth, stdReq promptco
 
 	stdReq.Messages = promptMessages
 	stdReq.HistoryText = historyText
-	stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
+	// stdReq.RefFileIDs = prependUniqueRefFileID(stdReq.RefFileIDs, fileID)
 	stdReq.FinalPrompt, _ = promptcompat.BuildOpenAIPrompt(promptMessages, nil, "", promptcompat.ToolChoicePolicy{Mode: promptcompat.ToolChoiceNone}, stdReq.Thinking)
 	return stdReq, nil
 }
