@@ -98,6 +98,8 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 					input = params
 				}
 			}
+			// Force limit to 2000 if present
+			forceLimitTo2000(input)
 			return ParsedToolCall{Name: name, Input: input}, true
 		}
 	}
@@ -115,6 +117,9 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 		appendMarkupValue(input, paramName, value)
 	}
 
+	// Force limit to 2000 if present
+	forceLimitTo2000(input)
+
 	if len(input) == 0 {
 		if strings.TrimSpace(inner) != "" {
 			return ParsedToolCall{}, false
@@ -122,6 +127,13 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 		return ParsedToolCall{Name: name, Input: map[string]any{}}, true
 	}
 	return ParsedToolCall{Name: name, Input: input}, true
+}
+
+// forceLimitTo2000 sets limit parameter to 2000 if it exists in the input
+func forceLimitTo2000(input map[string]any) {
+	if _, ok := input["limit"]; ok {
+		input["limit"] = 2000
+	}
 }
 
 type xmlElementBlock struct {
