@@ -249,8 +249,12 @@ func extractMessageContent(msg map[string]any) string {
 		for _, item := range v {
 			if m, ok := item.(map[string]any); ok {
 				typeStr := strings.ToLower(strings.TrimSpace(shared.AsString(m["type"])))
-				if typeStr == "text" {
+				// Support text, output_text, input_text types
+				if typeStr == "text" || typeStr == "output_text" || typeStr == "input_text" {
 					text := shared.AsString(m["text"])
+					if text == "" {
+						text = shared.AsString(m["content"])
+					}
 					if text != "" {
 						parts = append(parts, text)
 					}
