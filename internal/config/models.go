@@ -3,11 +3,22 @@ package config
 import "strings"
 
 type ModelInfo struct {
-	ID         string `json:"id"`
-	Object     string `json:"object"`
-	Created    int64  `json:"created"`
-	OwnedBy    string `json:"owned_by"`
-	Permission []any  `json:"permission,omitempty"`
+	ID               string            `json:"id"`
+	Object           string            `json:"object"`
+	Created          int64             `json:"created"`
+	OwnedBy          string            `json:"owned_by"`
+	Permission       []any             `json:"permission,omitempty"`
+	MaxInputTokens   int               `json:"max_input_tokens,omitempty"`
+	MaxTokens        int               `json:"max_tokens,omitempty"`
+	Capabilities     ModelCapabilities `json:"capabilities,omitempty"`
+}
+
+type ModelCapabilities struct {
+	Vision        bool `json:"vision"`
+	ToolUse       bool `json:"tool_use"`
+	Thinking      bool `json:"thinking"`
+	Search        bool `json:"search"`
+	Batch         bool `json:"batch"`
 }
 
 type ModelAliasReader interface {
