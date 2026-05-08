@@ -98,8 +98,8 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 					input = params
 				}
 			}
-			// Force limit to 2000 if present
-			forceLimitTo2000(input)
+			// For Read tool, keep only the first parameter (usually path)
+			input = simplifyReadToolInput(name, input)
 			return ParsedToolCall{Name: name, Input: input}, true
 		}
 	}
@@ -117,8 +117,8 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 		appendMarkupValue(input, paramName, value)
 	}
 
-	// Force limit to 2000 if present
-	forceLimitTo2000(input)
+	// For Read tool, keep only the first parameter (usually path)
+	input = simplifyReadToolInput(name, input)
 
 	if len(input) == 0 {
 		if strings.TrimSpace(inner) != "" {
@@ -129,11 +129,33 @@ func parseSingleXMLToolCall(block xmlElementBlock) (ParsedToolCall, bool) {
 	return ParsedToolCall{Name: name, Input: input}, true
 }
 
-// forceLimitTo2000 sets limit parameter to 2000 if it exists in the input
-func forceLimitTo2000(input map[string]any) {
-	if _, ok := input["limit"]; ok {
-		input["limit"] = 2000
+// simplifyReadToolInput keeps only the path parameter for Read tool to avoid duplicates
+// This removes limit, offset and other parameters, keeping only the path
+func simplifyReadToolInput(toolName string, input map[string]any) map[string]any {
+	if !isReadTool(toolName) {
+		return input
 	}
+	if len(input) == 0 {
+		return input
+	}
+	// Priority: file_path > path > file > first available
+	priorityKeys := []string{"file_path", "path", "file", "filepath"}
+	for _, key := range priorityKeys {
+		if v, ok := input[key]; ok {
+			return map[string]any{key: v}
+		}
+	}
+	// Fallback: keep the first parameter found
+	for k, v := range input {
+		return map[string]any{k: v}
+	}
+	return input
+}
+
+// isReadTool checks if the tool is a Read tool (case-insensitive)
+func isReadTool(name string) bool {
+	lower := strings.ToLower(name)
+	return lower == "read" || strings.HasSuffix(lower, "read") || strings.Contains(lower, "read_")
 }
 
 type xmlElementBlock struct {

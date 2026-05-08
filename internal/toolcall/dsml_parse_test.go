@@ -29,8 +29,9 @@ func TestDSMLFullWidthParsing(t *testing.T) {
 		if _, ok := tc.Input["filePath"]; !ok {
 			t.Errorf("Call %d: missing filePath parameter", i)
 		}
-		if _, ok := tc.Input["limit"]; !ok {
-			t.Errorf("Call %d: missing limit parameter", i)
+		// Read tool parameters are simplified - only filePath is kept, limit is removed
+		if len(tc.Input) != 1 {
+			t.Errorf("Call %d: expected 1 parameter (filePath), got %d", i, len(tc.Input))
 		}
 	}
 
