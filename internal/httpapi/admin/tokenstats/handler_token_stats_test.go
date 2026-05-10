@@ -92,13 +92,13 @@ func TestParseTimeRange(t *testing.T) {
 		input    string
 		expected TimeRange
 	}{
-		{"30s", Range30Seconds},
+		{"6h", Range6Hours},
 		{"24h", Range24Hours},
 		{"7d", Range7Days},
 		{"30d", Range30Days},
 		{"", Range30Days},
 		{"invalid", Range30Days},
-		{"30S", Range30Days},
+		{"6H", Range30Days},
 		{"24H", Range30Days},
 	}
 

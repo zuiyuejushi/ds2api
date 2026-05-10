@@ -10,7 +10,7 @@ import (
 type TimeRange string
 
 const (
-	Range30Seconds TimeRange = "30s"
+	Range6Hours TimeRange = "6h"
 	Range24Hours   TimeRange = "24h"
 	Range7Days     TimeRange = "7d"
 	Range30Days    TimeRange = "30d"
@@ -94,10 +94,10 @@ func (h *Handler) GetTokenStats(w http.ResponseWriter, r *http.Request) {
 	var pointCount int
 
 	switch timeRange {
-	case Range30Seconds:
-		startTime = now.Add(-30 * time.Second)
-		interval = time.Second
-		pointCount = 30
+	case Range6Hours:
+		startTime = now.Add(-6 * time.Hour)
+		interval = time.Hour
+		pointCount = 6
 	case Range24Hours:
 		startTime = now.Add(-24 * time.Hour)
 		interval = time.Hour
@@ -262,8 +262,8 @@ func calculateCost(promptTokens, completionTokens int64, pricing struct{ InputPr
 
 func parseTimeRange(s string) TimeRange {
 	switch s {
-	case "30s":
-		return Range30Seconds
+	case "6h":
+		return Range6Hours
 	case "24h":
 		return Range24Hours
 	case "7d":

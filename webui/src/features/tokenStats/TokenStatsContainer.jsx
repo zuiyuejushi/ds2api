@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { useI18n } from '../../i18n'
 
 const RANGE_OPTIONS = [
-    { key: '30s', label: '30s' },
+    { key: '6h', label: '6小时' },
     { key: '24h', label: '24小时' },
     { key: '7d', label: '7天' },
     { key: '30d', label: '30天' },
@@ -36,10 +36,7 @@ function formatCurrency(num) {
 
 function formatDateTime(timestamp, range) {
     const date = new Date(timestamp)
-    if (range === '30s') {
-        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    }
-    if (range === '24h') {
+    if (range === '6h' || range === '24h') {
         return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     }
     return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
@@ -200,7 +197,7 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
 
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
-    const [range, setRange] = useState('30d')
+    const [range, setRange] = useState('24h')
     const [modelFilter, setModelFilter] = useState('all')
     const [stats, setStats] = useState(null)
 
@@ -230,10 +227,53 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
         loadStats({ silent: true }).finally(() => setRefreshing(false))
     }
 
-    const filteredPoints = useMemo(() => {
-        if (!stats?.points) return []
-        return stats.points
-    }, [stats])
+    // Filter data by selected model
+    const filteredData = useMemo(() => {
+        if (!stats) return { points: [], totalRequests: 0, totalCost: 0, totalTokens: 0, totalPromptTokens: 0, totalOutputTokens: 0, cachedTokens: 0 }
+
+        if (modelFilter === 'all') {
+            return {
+                points: stats.points || [],
+                totalRequests: stats.total_requests || 0,
+                totalCost: stats.total_cost || 0,
+                totalTokens: stats.total_tokens || 0,
+                totalPromptTokens: stats.total_prompt_tokens || 0,
+                totalOutputTokens: stats.total_output_tokens || 0,
+                cachedTokens: stats.cached_tokens || 0,
+            }
+        }
+
+        // Get model breakdown for selected model
+        const modelStats = stats.model_breakdown?.[modelFilter]
+        if (!modelStats) {
+            return { points: [], totalRequests: 0, totalCost: 0, totalTokens: 0, totalPromptTokens: 0, totalOutputTokens: 0, cachedTokens: 0 }
+        }
+
+        // Filter points to only include data for selected model
+        // Since points are aggregated by time and don't have per-model breakdown,
+        // we need to estimate based on the model's proportion of total usage
+        const totalModelTokens = modelStats.total_tokens || 1
+        const totalAllTokens = stats.total_tokens || 1
+        const ratio = totalModelTokens / totalAllTokens
+
+        const filteredPoints = (stats.points || []).map(point => ({
+            ...point,
+            prompt_tokens: Math.round(point.prompt_tokens * ratio),
+            completion_tokens: Math.round(point.completion_tokens * ratio),
+            total_tokens: Math.round(point.total_tokens * ratio),
+            cost: point.cost * ratio,
+        }))
+
+        return {
+            points: filteredPoints,
+            totalRequests: modelStats.requests || 0,
+            totalCost: modelStats.cost || 0,
+            totalTokens: modelStats.total_tokens || 0,
+            totalPromptTokens: modelStats.prompt_tokens || 0,
+            totalOutputTokens: modelStats.completion_tokens || 0,
+            cachedTokens: 0, // Model breakdown doesn't have cached tokens
+        }
+    }, [stats, modelFilter])
 
     if (loading) {
         return (
@@ -303,9 +343,9 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
 
                 {/* Summary line */}
                 <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
-                    <span>{stats?.total_requests || 0} 次请求</span>
+                    <span>{filteredData.totalRequests} 次请求</span>
                     <span className="text-border">|</span>
-                    <span>{formatCurrency(stats?.total_cost || 0)} 总成本</span>
+                    <span>{formatCurrency(filteredData.totalCost)} 总成本</span>
                 </div>
             </div>
 
@@ -320,7 +360,7 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
                         </div>
                     </div>
                     <div className="text-2xl font-bold text-foreground mt-3">
-                        {formatNumber(stats?.total_requests || 0)}
+                        {formatNumber(filteredData.totalRequests)}
                     </div>
                 </div>
 
@@ -333,7 +373,7 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
                         </div>
                     </div>
                     <div className="text-2xl font-bold text-foreground mt-3">
-                        {formatCurrency(stats?.total_cost || 0)}
+                        {formatCurrency(filteredData.totalCost)}
                     </div>
                 </div>
 
@@ -346,16 +386,16 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
                         </div>
                     </div>
                     <div className="text-2xl font-bold text-foreground mt-3">
-                        {formatNumber(stats?.total_tokens || 0)}
+                        {formatNumber(filteredData.totalTokens)}
                     </div>
                     <div className="mt-2 space-y-1">
                         <div className="flex justify-between text-xs text-muted-foreground">
                             <span>Input</span>
-                            <span>{formatNumber(stats?.total_prompt_tokens || 0)}</span>
+                            <span>{formatNumber(filteredData.totalPromptTokens)}</span>
                         </div>
                         <div className="flex justify-between text-xs text-muted-foreground">
                             <span>Output</span>
-                            <span>{formatNumber(stats?.total_output_tokens || 0)}</span>
+                            <span>{formatNumber(filteredData.totalOutputTokens)}</span>
                         </div>
                     </div>
                 </div>
@@ -369,7 +409,7 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
                         </div>
                     </div>
                     <div className="text-2xl font-bold text-foreground mt-3">
-                        {formatNumber(stats?.cached_tokens || 0)}
+                        {formatNumber(filteredData.cachedTokens)}
                     </div>
                     <div className="mt-2 space-y-1">
                         <div className="flex justify-between text-xs text-muted-foreground">
@@ -378,7 +418,7 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
                         </div>
                         <div className="flex justify-between text-xs text-muted-foreground">
                             <span>命中</span>
-                            <span>{formatNumber(stats?.cached_tokens || 0)}</span>
+                            <span>{formatNumber(filteredData.cachedTokens)}</span>
                         </div>
                     </div>
                 </div>
@@ -389,14 +429,14 @@ export default function TokenStatsContainer({ authFetch, onMessage }) {
                 <div className="flex items-center justify-between mb-4">
                     <div className="text-sm font-semibold text-foreground">使用趋势</div>
                     <div className="text-xs text-muted-foreground">
-                        {range === '30s' && '过去 30 秒'}
+                        {range === '6h' && '过去 6 小时'}
                         {range === '24h' && '过去 24 小时'}
                         {range === '7d' && '过去 7 天'}
                         {range === '30d' && '过去 30 天'}
                     </div>
                 </div>
                 <div className="h-[300px]">
-                    <LineChart data={filteredPoints} range={range} />
+                    <LineChart data={filteredData.points} range={range} />
                 </div>
             </div>
         </div>
