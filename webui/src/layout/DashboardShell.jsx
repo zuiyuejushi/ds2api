@@ -11,13 +11,15 @@ import {
     Server,
     Users,
     Globe,
-    History
+    History,
+    BarChart3
 } from 'lucide-react'
 import clsx from 'clsx'
 
 import AccountManagerContainer from '../features/account/AccountManagerContainer'
 import ApiTesterContainer from '../features/apiTester/ApiTesterContainer'
 import ChatHistoryContainer from '../features/chatHistory/ChatHistoryContainer'
+import TokenStatsContainer from '../features/tokenStats/TokenStatsContainer'
 import BatchImport from '../components/BatchImport'
 import VercelSyncContainer from '../features/vercel/VercelSyncContainer'
 import SettingsContainer from '../features/settings/SettingsContainer'
@@ -36,6 +38,7 @@ export default function DashboardShell({ token, onLogout, config, fetchConfig, s
         { id: 'proxies', label: t('nav.proxies.label'), icon: Globe, description: t('nav.proxies.desc') },
         { id: 'test', label: t('nav.test.label'), icon: Server, description: t('nav.test.desc') },
         { id: 'history', label: t('nav.history.label'), icon: History, description: t('nav.history.desc') },
+        { id: 'tokenStats', label: t('nav.tokenStats.label'), icon: BarChart3, description: t('nav.tokenStats.desc') },
         { id: 'import', label: t('nav.import.label'), icon: Upload, description: t('nav.import.desc') },
         { id: 'vercel', label: t('nav.vercel.label'), icon: Cloud, description: t('nav.vercel.desc') },
         { id: 'settings', label: t('nav.settings.label'), icon: SettingsIcon, description: t('nav.settings.desc') },
@@ -103,6 +106,8 @@ export default function DashboardShell({ token, onLogout, config, fetchConfig, s
                 return <ApiTesterContainer config={config} onMessage={showMessage} authFetch={authFetch} />
             case 'history':
                 return <ChatHistoryContainer onMessage={showMessage} authFetch={authFetch} />
+            case 'tokenStats':
+                return <TokenStatsContainer onMessage={showMessage} authFetch={authFetch} />
             case 'import':
                 return <BatchImport onRefresh={fetchConfig} onMessage={showMessage} authFetch={authFetch} />
             case 'vercel':

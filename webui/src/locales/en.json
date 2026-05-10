@@ -21,6 +21,10 @@
             "label": "Conversations",
             "desc": "Browse server-side external chat history"
         },
+        "tokenStats": {
+            "label": "Usage Stats",
+            "desc": "View token usage and cost statistics"
+        },
         "import": {
             "label": "Batch Import",
             "desc": "Bulk import account configuration"

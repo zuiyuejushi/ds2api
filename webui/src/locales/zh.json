@@ -21,6 +21,10 @@
             "label": "对话记录",
             "desc": "查看服务器保存的外部对话历史"
         },
+        "tokenStats": {
+            "label": "使用统计",
+            "desc": "查看 Token 使用情况和成本统计"
+        },
         "import": {
             "label": "批量导入",
             "desc": "批量导入账号配置"
