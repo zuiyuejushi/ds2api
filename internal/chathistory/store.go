@@ -16,8 +16,26 @@ import (
 	"ds2api/internal/config"
 )
 
+// TokenRecord represents a single token usage record for statistics
+type TokenRecord struct {
+	Timestamp        int64  `json:"timestamp"`
+	Model            string `json:"model"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+	CachedTokens     int64  `json:"cached_tokens,omitempty"`
+}
+
+// tokenStatsFile holds all token records
+type tokenStatsFile struct {
+	Version int           `json:"version"`
+	Records []TokenRecord `json:"records"`
+}
+
 const (
-	FileVersion      = 2
+	FileVersion               = 2
+	tokenStatsVersion         = 1
+	tokenStatsRetentionDays   = 30
 	DisabledLimit    = 0
 	DefaultLimit     = 20
 	MaxLimit         = 50
@@ -293,6 +311,8 @@ func (s *Store) Update(id string, params UpdateParams) (Entry, error) {
 	}
 	if params.Completed {
 		item.CompletedAt = now
+		// Record token usage for statistics
+		s.RecordTokenUsage(item.Model, params.Usage)
 	}
 	// Update HistoryText if provided (for history split updates)
 	if strings.TrimSpace(params.HistoryText) != "" {

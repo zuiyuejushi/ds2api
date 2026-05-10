@@ -5,15 +5,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"ds2api/internal/chathistory"
 )
 
 type TimeRange string
 
 const (
-	Range6Hours TimeRange = "6h"
-	Range24Hours   TimeRange = "24h"
-	Range7Days     TimeRange = "7d"
-	Range30Days    TimeRange = "30d"
+	Range6Hours  TimeRange = "6h"
+	Range24Hours TimeRange = "24h"
+	Range7Days   TimeRange = "7d"
+	Range30Days  TimeRange = "30d"
 )
 
 // DeepSeek official pricing (per 1M tokens)
@@ -23,9 +25,9 @@ var modelPricing = map[string]struct {
 	OutputPrice float64 // $ per 1M output tokens
 }{
 	// DeepSeek V4 Flash series (default/cheaper)
-	"deepseek-v4-flash":        {InputPrice: 0.50, OutputPrice: 1.00},
-	"deepseek-v4-flash-search": {InputPrice: 0.50, OutputPrice: 1.00},
-	"deepseek-v4-vision":       {InputPrice: 0.50, OutputPrice: 1.00},
+	"deepseek-v4-flash":         {InputPrice: 0.50, OutputPrice: 1.00},
+	"deepseek-v4-flash-search":  {InputPrice: 0.50, OutputPrice: 1.00},
+	"deepseek-v4-vision":        {InputPrice: 0.50, OutputPrice: 1.00},
 	"deepseek-v4-vision-search": {InputPrice: 0.50, OutputPrice: 1.00},
 	// DeepSeek V4 Pro series (more expensive, reasoning model)
 	"deepseek-v4-pro":        {InputPrice: 2.00, OutputPrice: 6.00},
@@ -116,12 +118,8 @@ func (h *Handler) GetTokenStats(w http.ResponseWriter, r *http.Request) {
 		pointCount = 24
 	}
 
-	// Get all history entries
-	snapshot, err := store.Snapshot()
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": err.Error()})
-		return
-	}
+	// Query token records from dedicated token stats store
+	records := store.QueryTokenRecords(startTime.UnixMilli(), now.UnixMilli())
 
 	// Initialize points
 	points := make([]StatsPoint, pointCount)
@@ -139,68 +137,40 @@ func (h *Handler) GetTokenStats(w http.ResponseWriter, r *http.Request) {
 	var totalCost float64
 	modelBreakdown := make(map[string]ModelStats)
 
-	for _, item := range snapshot.Items {
-		// Only count completed items within time range
-		if item.CompletedAt == 0 || item.CompletedAt < startTime.UnixMilli() || item.CompletedAt > now.UnixMilli() {
-			continue
-		}
-
-		detail, err := store.Get(item.ID)
-		if err != nil {
-			continue
-		}
-
-		// Extract usage data
-		usage := detail.Usage
-		if usage == nil {
-			continue
-		}
-
-		promptTokens := extractInt64(usage, "prompt_tokens", "input_tokens")
-		completionTokens := extractInt64(usage, "completion_tokens", "output_tokens")
-		totalItemTokens := extractInt64(usage, "total_tokens")
-
-		if totalItemTokens == 0 {
-			totalItemTokens = promptTokens + completionTokens
-		}
-
+	for _, record := range records {
 		// Get model and pricing
-		model := detail.Model
+		model := record.Model
 		if model == "" {
 			model = "unknown"
 		}
 		pricing := getPricing(model)
 
 		// Calculate cost for this request
-		requestCost := calculateCost(promptTokens, completionTokens, pricing)
+		requestCost := calculateCost(record.PromptTokens, record.CompletionTokens, pricing)
 
 		// Update totals
 		totalRequests++
-		totalPromptTokens += promptTokens
-		totalCompletionTokens += completionTokens
-		totalTokens += totalItemTokens
+		totalPromptTokens += record.PromptTokens
+		totalCompletionTokens += record.CompletionTokens
+		totalTokens += record.TotalTokens
 		totalCost += requestCost
+		cachedTokens += record.CachedTokens
 
 		// Update model breakdown
 		modelStat := modelBreakdown[model]
 		modelStat.Requests++
-		modelStat.PromptTokens += promptTokens
-		modelStat.CompletionTokens += completionTokens
-		modelStat.TotalTokens += totalItemTokens
+		modelStat.PromptTokens += record.PromptTokens
+		modelStat.CompletionTokens += record.CompletionTokens
+		modelStat.TotalTokens += record.TotalTokens
 		modelStat.Cost += requestCost
 		modelBreakdown[model] = modelStat
 
-		// Calculate cached tokens (if available)
-		if promptCacheHit, ok := usage["prompt_cache_hit_tokens"]; ok {
-			cachedTokens += int64(toFloat64(promptCacheHit))
-		}
-
 		// Find which point this belongs to
-		pointIndex := int(item.CompletedAt-startTime.UnixMilli()) / int(interval.Milliseconds())
+		pointIndex := int(record.Timestamp-startTime.UnixMilli()) / int(interval.Milliseconds())
 		if pointIndex >= 0 && pointIndex < pointCount {
-			points[pointIndex].PromptTokens += promptTokens
-			points[pointIndex].CompletionTokens += completionTokens
-			points[pointIndex].TotalTokens += totalItemTokens
+			points[pointIndex].PromptTokens += record.PromptTokens
+			points[pointIndex].CompletionTokens += record.CompletionTokens
+			points[pointIndex].TotalTokens += record.TotalTokens
 			points[pointIndex].RequestCount++
 			points[pointIndex].Cost += requestCost
 		}
@@ -221,6 +191,15 @@ func (h *Handler) GetTokenStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// RecordTokenUsage records token usage for a completed request
+func RecordTokenUsage(store *chathistory.Store, id, model string, usage map[string]any) error {
+	if store == nil {
+		return nil
+	}
+	store.RecordTokenUsage(model, usage)
+	return nil
 }
 
 // getPricing returns the pricing for a given model
